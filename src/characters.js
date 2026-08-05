@@ -470,31 +470,51 @@ export function updateCharacterAnim(char, moving, running, t, opts = {}) {
   }
 
   if (!punching && !slashing) {
-    const rate = running ? 14 : moving ? 9 : 0
-    const amp = running ? 0.7 : moving ? 0.45 : 0
-    const swing = rate ? Math.sin(t * rate) * amp : 0
+    const swimming = opts.swimming || d.swimming
 
-    d.leftArm.rotation.x = swing
-    d.rightArm.rotation.x = -swing
-    d.leftArm.rotation.z = 0
-    d.rightArm.rotation.z = 0
-    d.leftLeg.rotation.x = -swing
-    d.rightLeg.rotation.x = swing
-
-    if (!moving) {
-      d.hips.position.y = 0.95 + Math.sin(t * 2.2) * 0.02
-      d.head.rotation.z = Math.sin(t * 1.5) * 0.03
-      if (d.kind === 'zoro' && d.swordMouth) {
-        d.swordMouth.visible = Math.sin(t) > 0.85
-      }
+    if (swimming) {
+      const rate = moving ? 10 : 3
+      const swing = Math.sin(t * rate) * (moving ? 0.85 : 0.25)
+      d.leftArm.rotation.x = -0.6 + swing
+      d.rightArm.rotation.x = -0.6 - swing
+      d.leftArm.rotation.z = 0.9
+      d.rightArm.rotation.z = -0.9
+      d.leftLeg.rotation.x = swing * 0.7
+      d.rightLeg.rotation.x = -swing * 0.7
+      d.hips.position.y = 0.95 + Math.sin(t * rate) * 0.06
+      d.hips.rotation.x = 0.55
+      d.head.rotation.x = -0.25
+      if (d.swordMouth) d.swordMouth.visible = false
     } else {
-      d.hips.position.y = 0.95 + Math.abs(Math.sin(t * rate)) * 0.04
-      d.head.rotation.z = 0
-      if (d.swordMouth && d.slashT < 0) d.swordMouth.visible = false
+      d.hips.rotation.x = 0
+      d.head.rotation.x = 0
+
+      const rate = running ? 14 : moving ? 9 : 0
+      const amp = running ? 0.7 : moving ? 0.45 : 0
+      const swing = rate ? Math.sin(t * rate) * amp : 0
+
+      d.leftArm.rotation.x = swing
+      d.rightArm.rotation.x = -swing
+      d.leftArm.rotation.z = 0
+      d.rightArm.rotation.z = 0
+      d.leftLeg.rotation.x = -swing
+      d.rightLeg.rotation.x = swing
+
+      if (!moving) {
+        d.hips.position.y = 0.95 + Math.sin(t * 2.2) * 0.02
+        d.head.rotation.z = Math.sin(t * 1.5) * 0.03
+        if (d.kind === 'zoro' && d.swordMouth) {
+          d.swordMouth.visible = Math.sin(t) > 0.85
+        }
+      } else {
+        d.hips.position.y = 0.95 + Math.abs(Math.sin(t * rate)) * 0.04
+        d.head.rotation.z = 0
+        if (d.swordMouth && d.slashT < 0) d.swordMouth.visible = false
+      }
     }
 
     if (d.hat && d.hat.visible) {
-      d.hat.rotation.z = moving ? Math.sin(t * rate) * 0.05 : Math.sin(t) * 0.02
+      d.hat.rotation.z = moving ? Math.sin(t * 8) * 0.05 : Math.sin(t) * 0.02
     }
   }
 
