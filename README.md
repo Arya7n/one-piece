@@ -8,12 +8,14 @@ Built with Vite: Gear 5 stretch attacks, sword-slash VFX, collectibles, and a bo
 
 ## Features
 
-- Play as **Luffy** or **Zoro** (switch anytime)
-- Multi-island map with village, bridge, watchtower, and camp
-- Swim in the ocean and walk the pier to board **Going Merry**
-- Sail the ship across the archipelago
-- Gear 5 mode, rubber punches, and Three Sword Style slash VFX
-- Collect berries, open treasure chests, smash training barrels
+- Play as the full **Straw Hat crew** (Luffy → Jinbe) — switch anytime; others idle on their own islands
+- **Call crew (C)** gathers everyone to you; board Merry with whoever is nearby
+- Expanded multi-island archipelago (7 islands) with village, long bridge, watchtower, and camps
+- Swim, jump, climb, sail **Going Merry**
+- Gear 5, unique attacks, Devil Fruits, berries, chests, barrels, meat HP
+- Zoro occasionally wanders off on his own
+- Mobile virtual gamepad + HTML5 gamepad support
+- Synthesized SFX (no audio files needed)
 
 ## Controls
 
@@ -21,13 +23,19 @@ Built with Vite: Gear 5 stretch attacks, sword-slash VFX, collectibles, and a bo
 |-----|--------|
 | `WASD` | Move / sail |
 | `Shift` | Run (on land) |
-| `F` / `Space` | Attack |
+| `Space` | Jump / leap off climb |
+| `F` | Attack |
+| `C` | Call all crew to you |
 | `G` | Toggle Gear 5 (Luffy) |
-| `E` | Board ship / open chests / interact |
+| `E` | Board ship / open chests / eat meat |
 | `H` | Recall Going Merry to the pier |
-| `1` / `2` | Switch Luffy / Zoro |
+| `1`–`0` | Switch crew member |
+| `[` `]` or `Q` `.` | Cycle crew |
+| Hold `W` near tower/flag | Climb |
 | `B` | Toggle bloom |
 | Drag | Orbit camera |
+
+On touch / narrow screens a virtual stick + buttons appear (A attack, J jump, E interact, G Gear 5, R run, ⇄ cycle).
 
 ## Getting started
 
@@ -53,9 +61,11 @@ npm run preview  # preview the build
 ```
 src/
   main.js         # game loop, input, combat, ship boarding
-  characters.js   # Luffy & Zoro builders + animations
+  characters.js   # Straw Hat crew builders + animations
   world.js        # islands, props, collectibles, Going Merry
-  style.css       # HUD styles
+  audio.js        # Web Audio SFX
+  gamepad.js      # mobile + physical gamepad
+  style.css       # HUD + touch pad styles
 ```
 
 ## License

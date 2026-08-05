@@ -267,8 +267,13 @@ export function createLuffy() {
     fist,
     gear5: false,
     punchT: -1,
+    kickT: -1,
+    staffT: -1,
+    shotT: -1,
+    slashT: -1,
     attackLock: 0,
     displayName: 'Luffy',
+    moveSpeed: 4.4,
   }
 
   enableShadows(root)
@@ -360,8 +365,13 @@ export function createZoro() {
     swordR,
     swordMouth,
     slashT: -1,
+    punchT: -1,
+    kickT: -1,
+    staffT: -1,
+    shotT: -1,
     attackLock: 0,
     displayName: 'Zoro',
+    moveSpeed: 3.8,
   }
 
   enableShadows(root)
@@ -425,17 +435,471 @@ export function createSlashVfx() {
   return group
 }
 
+function baseHumanoid(opts) {
+  const {
+    name,
+    kind,
+    skinColor,
+    hairColor,
+    hairStyle,
+    torsoColor,
+    legsColor,
+    displayName,
+    scale = 1,
+    scar = false,
+  } = opts
+  const root = new THREE.Group()
+  root.name = name
+  root.scale.setScalar(scale)
+  const skin = skinMat(skinColor)
+
+  const hips = new THREE.Group()
+  hips.position.y = 0.95
+  root.add(hips)
+
+  const torso = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.32, 0.48, 6, 10),
+    clothMat(torsoColor),
+  )
+  torso.position.y = 0.36
+  hips.add(torso)
+
+  const pants = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.32, 0.28, 0.55, 10),
+    clothMat(legsColor),
+  )
+  pants.position.y = -0.12
+  hips.add(pants)
+
+  const head = makeHead(skin, hairColor, { hairStyle, scar })
+  head.position.y = 0.98
+  hips.add(head)
+
+  const leftArm = makeLimb(skin, 0.46, 0.1)
+  leftArm.position.set(-0.42, 0.55, 0)
+  hips.add(leftArm)
+  const rightArm = makeLimb(skin, 0.46, 0.1)
+  rightArm.position.set(0.42, 0.55, 0)
+  hips.add(rightArm)
+
+  const leftLeg = makeLimb(skin, 0.5, 0.12)
+  leftLeg.position.set(-0.16, 0, 0)
+  hips.add(leftLeg)
+  const rightLeg = makeLimb(skin, 0.5, 0.12)
+  rightLeg.position.set(0.16, 0, 0)
+  hips.add(rightLeg)
+
+  root.userData = {
+    kind,
+    hips,
+    leftArm,
+    rightArm,
+    leftLeg,
+    rightLeg,
+    head,
+    attackLock: 0,
+    kickT: -1,
+    staffT: -1,
+    shotT: -1,
+    punchT: -1,
+    slashT: -1,
+    displayName,
+    moveSpeed: opts.moveSpeed ?? 4,
+  }
+  enableShadows(root)
+  return root
+}
+
+export function createNami() {
+  const root = baseHumanoid({
+    name: 'Nami',
+    kind: 'nami',
+    skinColor: 0xffd4b8,
+    hairColor: 0xff8a00,
+    hairStyle: 'luffy',
+    torsoColor: 0xff8a65,
+    legsColor: 0x1565c0,
+    displayName: 'Nami',
+    moveSpeed: 4.2,
+  })
+  const staff = new THREE.Group()
+  const pole = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.04, 0.045, 1.6, 6),
+    clothMat(0xf5f5f5),
+  )
+  pole.position.y = 0.8
+  staff.add(pole)
+  const tip = new THREE.Mesh(
+    new THREE.SphereGeometry(0.1, 8, 8),
+    new THREE.MeshStandardMaterial({
+      color: 0x4fc3f7,
+      emissive: 0x29b6f6,
+      emissiveIntensity: 0.4,
+    }),
+  )
+  tip.position.y = 1.55
+  staff.add(tip)
+  staff.position.set(0.45, 0.2, 0)
+  staff.rotation.z = -0.3
+  root.userData.hips.add(staff)
+  root.userData.staff = staff
+  return root
+}
+
+export function createUsopp() {
+  const root = baseHumanoid({
+    name: 'Usopp',
+    kind: 'usopp',
+    skinColor: 0xc68642,
+    hairColor: 0x3e2723,
+    hairStyle: 'zoro',
+    torsoColor: 0xffeb3b,
+    legsColor: 0x5d4037,
+    displayName: 'Usopp',
+    moveSpeed: 3.9,
+  })
+  // Long nose
+  const nose = new THREE.Mesh(
+    new THREE.ConeGeometry(0.06, 0.35, 6),
+    skinMat(0xc68642),
+  )
+  nose.rotation.x = Math.PI / 2
+  nose.position.set(0, 0.02, 0.45)
+  root.userData.head.add(nose)
+
+  const sling = new THREE.Group()
+  const handle = new THREE.Mesh(
+    new THREE.BoxGeometry(0.08, 0.5, 0.08),
+    clothMat(0x5d4037),
+  )
+  sling.add(handle)
+  sling.position.set(0.4, 0.4, 0.1)
+  root.userData.hips.add(sling)
+  root.userData.sling = sling
+  return root
+}
+
+export function createSanji() {
+  const root = baseHumanoid({
+    name: 'Sanji',
+    kind: 'sanji',
+    skinColor: 0xffd2a6,
+    hairColor: 0xfdd835,
+    hairStyle: 'luffy',
+    torsoColor: 0x212121,
+    legsColor: 0x111111,
+    displayName: 'Sanji',
+    moveSpeed: 4.6,
+  })
+  // Curly brow hint
+  const brow = new THREE.Mesh(
+    new THREE.TorusGeometry(0.08, 0.02, 4, 10, Math.PI),
+    clothMat(0xfdd835),
+  )
+  brow.position.set(0.12, 0.18, 0.34)
+  brow.rotation.z = -0.4
+  root.userData.head.add(brow)
+  // Cigarette
+  const cig = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.015, 0.015, 0.2, 4),
+    clothMat(0xfff8e1),
+  )
+  cig.rotation.z = Math.PI / 2
+  cig.position.set(0.05, -0.1, 0.4)
+  root.userData.head.add(cig)
+  return root
+}
+
+export function createChopper() {
+  const root = new THREE.Group()
+  root.name = 'Chopper'
+  root.scale.setScalar(0.75)
+  const fur = skinMat(0xd7ccc8)
+  const hips = new THREE.Group()
+  hips.position.y = 0.7
+  root.add(hips)
+
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.45, 12, 10), fur)
+  body.scale.set(1, 1.1, 0.9)
+  hips.add(body)
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 10), fur)
+  head.position.y = 0.7
+  hips.add(head)
+
+  const hat = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.35, 0.38, 0.2, 12),
+    clothMat(0xc62828),
+  )
+  hat.position.y = 0.35
+  head.add(hat)
+  const cross = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.06, 0.02), clothMat(0xffffff))
+  cross.position.set(0, 0.05, 0.2)
+  hat.add(cross)
+  const cross2 = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.18, 0.02), clothMat(0xffffff))
+  cross2.position.set(0, 0.05, 0.2)
+  hat.add(cross2)
+
+  for (const side of [-1, 1]) {
+    const antler = new THREE.Mesh(
+      new THREE.ConeGeometry(0.06, 0.35, 5),
+      clothMat(0x5d4037),
+    )
+    antler.position.set(side * 0.22, 0.45, 0)
+    antler.rotation.z = side * -0.35
+    head.add(antler)
+  }
+
+  const leftArm = makeLimb(fur, 0.28, 0.12)
+  leftArm.position.set(-0.4, 0.2, 0)
+  hips.add(leftArm)
+  const rightArm = makeLimb(fur, 0.28, 0.12)
+  rightArm.position.set(0.4, 0.2, 0)
+  hips.add(rightArm)
+  const leftLeg = makeLimb(fur, 0.28, 0.12)
+  leftLeg.position.set(-0.16, -0.2, 0)
+  hips.add(leftLeg)
+  const rightLeg = makeLimb(fur, 0.28, 0.12)
+  rightLeg.position.set(0.16, -0.2, 0)
+  hips.add(rightLeg)
+
+  root.userData = {
+    kind: 'chopper',
+    hips,
+    leftArm,
+    rightArm,
+    leftLeg,
+    rightLeg,
+    head,
+    attackLock: 0,
+    kickT: -1,
+    punchT: -1,
+    slashT: -1,
+    staffT: -1,
+    shotT: -1,
+    displayName: 'Chopper',
+    moveSpeed: 3.6,
+  }
+  enableShadows(root)
+  return root
+}
+
+export function createRobin() {
+  const root = baseHumanoid({
+    name: 'Robin',
+    kind: 'robin',
+    skinColor: 0xffd2a6,
+    hairColor: 0x212121,
+    hairStyle: 'luffy',
+    torsoColor: 0x4a148c,
+    legsColor: 0x311b92,
+    displayName: 'Robin',
+    moveSpeed: 4.0,
+  })
+  // Extra sprouted arms (shown during attack)
+  const bloom = new THREE.Group()
+  bloom.visible = false
+  for (let i = 0; i < 4; i++) {
+    const arm = makeLimb(skinMat(0xffd2a6), 0.35, 0.08)
+    const a = (i / 4) * Math.PI * 2
+    arm.position.set(Math.cos(a) * 0.7, 0.4, Math.sin(a) * 0.5)
+    bloom.add(arm)
+  }
+  root.userData.hips.add(bloom)
+  root.userData.bloom = bloom
+  return root
+}
+
+export function createFranky() {
+  const root = baseHumanoid({
+    name: 'Franky',
+    kind: 'franky',
+    skinColor: 0x29b6f6,
+    hairColor: 0x1565c0,
+    hairStyle: 'zoro',
+    torsoColor: 0xfff8e1,
+    legsColor: 0x37474f,
+    displayName: 'Franky',
+    scale: 1.15,
+    moveSpeed: 3.5,
+  })
+  const sunglass = new THREE.Mesh(
+    new THREE.BoxGeometry(0.5, 0.12, 0.08),
+    clothMat(0x111111),
+  )
+  sunglass.position.set(0, 0.08, 0.36)
+  root.userData.head.add(sunglass)
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.08, 0.12, 1.2, 8),
+    new THREE.MeshStandardMaterial({
+      color: 0x00e5ff,
+      emissive: 0x00bcd4,
+      emissiveIntensity: 0.8,
+      transparent: true,
+      opacity: 0.85,
+    }),
+  )
+  beam.visible = false
+  beam.rotation.x = Math.PI / 2
+  beam.position.set(0, 0.7, 1.2)
+  root.userData.hips.add(beam)
+  root.userData.beam = beam
+  return root
+}
+
+export function createBrook() {
+  const root = baseHumanoid({
+    name: 'Brook',
+    kind: 'brook',
+    skinColor: 0xf5f5f5,
+    hairColor: 0x212121,
+    hairStyle: 'luffy',
+    torsoColor: 0x212121,
+    legsColor: 0x111111,
+    displayName: 'Brook',
+    moveSpeed: 4.1,
+  })
+  // Afro
+  const afro = new THREE.Mesh(
+    new THREE.SphereGeometry(0.55, 10, 8),
+    clothMat(0x212121),
+  )
+  afro.position.y = 0.35
+  root.userData.head.add(afro)
+  const cane = makeKatana(1.2)
+  cane.position.set(0.4, 0.15, -0.1)
+  cane.rotation.z = -0.5
+  root.userData.hips.add(cane)
+  root.userData.cane = cane
+  return root
+}
+
+export function createJinbe() {
+  const root = baseHumanoid({
+    name: 'Jinbe',
+    kind: 'jinbe',
+    skinColor: 0x4fc3f7,
+    hairColor: 0x000000,
+    hairStyle: 'zoro',
+    torsoColor: 0xffeb3b,
+    legsColor: 0xff8f00,
+    displayName: 'Jinbe',
+    scale: 1.2,
+    moveSpeed: 3.7,
+  })
+  // Fin ears
+  for (const side of [-1, 1]) {
+    const fin = new THREE.Mesh(
+      new THREE.ConeGeometry(0.12, 0.4, 4),
+      clothMat(0x0288d1),
+    )
+    fin.position.set(side * 0.4, 0.1, 0)
+    fin.rotation.z = side * 0.9
+    root.userData.head.add(fin)
+  }
+  return root
+}
+
+export const CREW_ORDER = [
+  'luffy',
+  'zoro',
+  'nami',
+  'usopp',
+  'sanji',
+  'chopper',
+  'robin',
+  'franky',
+  'brook',
+  'jinbe',
+]
+
+export function createCrew() {
+  return {
+    luffy: createLuffy(),
+    zoro: createZoro(),
+    nami: createNami(),
+    usopp: createUsopp(),
+    sanji: createSanji(),
+    chopper: createChopper(),
+    robin: createRobin(),
+    franky: createFranky(),
+    brook: createBrook(),
+    jinbe: createJinbe(),
+  }
+}
+
+export function triggerKick(char) {
+  const d = char.userData
+  if (d.attackLock > 0 || d.kickT >= 0) return false
+  d.kickT = 0
+  d.attackLock = 0.55
+  return true
+}
+
+export function triggerStaff(char) {
+  const d = char.userData
+  if (d.attackLock > 0 || d.staffT >= 0) return false
+  d.staffT = 0
+  d.attackLock = 0.5
+  return true
+}
+
+export function triggerShot(char) {
+  const d = char.userData
+  if (d.attackLock > 0 || d.shotT >= 0) return false
+  d.shotT = 0
+  d.attackLock = 0.45
+  return true
+}
+
+export function triggerBloom(char) {
+  const d = char.userData
+  if (d.attackLock > 0 || d.staffT >= 0) return false
+  d.staffT = 0
+  d.attackLock = 0.7
+  if (d.bloom) d.bloom.visible = true
+  return true
+}
+
+export function triggerBeam(char) {
+  const d = char.userData
+  if (d.attackLock > 0 || d.punchT >= 0) return false
+  d.punchT = 0
+  d.attackLock = 0.7
+  if (d.beam) d.beam.visible = true
+  return true
+}
+
+/** Create a reusable triple-slash VFX group (add to scene once). */
+export function createPelletVfx() {
+  const mesh = new THREE.Mesh(
+    new THREE.SphereGeometry(0.12, 8, 8),
+    new THREE.MeshStandardMaterial({
+      color: 0xffeb3b,
+      emissive: 0xffc107,
+      emissiveIntensity: 0.5,
+    }),
+  )
+  mesh.visible = false
+  mesh.userData = { t: -1, dir: new THREE.Vector3() }
+  return mesh
+}
+
 export function updateCharacterAnim(char, moving, running, t, opts = {}) {
   const d = char.userData
   if (!d?.leftArm) return
 
   const punching = d.punchT >= 0
   const slashing = d.slashT >= 0
+  const kicking = d.kickT >= 0
+  const staffing = d.staffT >= 0
+  const shooting = d.shotT >= 0
+  const attacking = punching || slashing || kicking || staffing || shooting
 
   if (d.attackLock > 0) d.attackLock -= opts.delta ?? 0.016
 
   // Rubber punch stretch
-  if (punching) {
+  if (punching && d.stretch) {
     d.punchT += opts.delta ?? 0.016
     const p = d.punchT
     const extend = p < 0.25 ? p / 0.25 : p < 0.45 ? 1 : Math.max(0, 1 - (p - 0.45) / 0.35)
@@ -450,9 +914,27 @@ export function updateCharacterAnim(char, moving, running, t, opts = {}) {
       d.fist.visible = false
       d.rightArm.visible = true
     }
+  } else if (punching && d.beam) {
+    // Franky beam
+    d.punchT += opts.delta ?? 0.016
+    const p = d.punchT
+    d.beam.scale.z = 1 + p * 4
+    d.beam.material.opacity = Math.max(0, 0.9 - p)
+    d.rightArm.rotation.x = -1.4
+    if (p > 0.55) {
+      d.punchT = -1
+      d.beam.visible = false
+      d.beam.scale.z = 1
+    }
+  } else if (punching) {
+    // Generic punch (Jinbe / Chopper)
+    d.punchT += opts.delta ?? 0.016
+    const p = d.punchT
+    d.rightArm.rotation.x = -1.5 * Math.min(1, p * 4)
+    if (p > 0.4) d.punchT = -1
   }
 
-  // Slash pose
+  // Slash pose (Zoro / Brook)
   if (slashing) {
     d.slashT += opts.delta ?? 0.016
     const s = d.slashT
@@ -462,17 +944,62 @@ export function updateCharacterAnim(char, moving, running, t, opts = {}) {
     d.leftArm.rotation.z = 0.8
     if (d.swordR) d.swordR.rotation.set(-1.2, 0.2, -0.3)
     if (d.swordL) d.swordL.rotation.set(-1.0, -0.2, 0.3)
+    if (d.cane) d.cane.rotation.set(-1.2, 0.2, -0.4)
     if (s > 0.45) {
       d.slashT = -1
       if (d.swordL) d.swordL.rotation.set(0.2, 0, 0.9)
       if (d.swordR) d.swordR.rotation.set(0.2, 0, -0.9)
+      if (d.cane) d.cane.rotation.set(0, 0, -0.5)
     }
   }
 
-  if (!punching && !slashing) {
-    const swimming = opts.swimming || d.swimming
+  // Sanji / Chopper kick
+  if (kicking) {
+    d.kickT += opts.delta ?? 0.016
+    const k = d.kickT
+    d.rightLeg.rotation.x = -1.6 * Math.min(1, k * 5)
+    d.leftArm.rotation.x = 0.5
+    if (k > 0.4) d.kickT = -1
+  }
 
-    if (swimming) {
+  // Nami staff / Robin bloom
+  if (staffing) {
+    d.staffT += opts.delta ?? 0.016
+    const s = d.staffT
+    d.rightArm.rotation.x = -1.3
+    d.rightArm.rotation.z = -0.6 + Math.sin(s * 18) * 0.4
+    if (d.staff) d.staff.rotation.z = -0.3 - s * 2
+    if (d.bloom) {
+      d.bloom.rotation.y = s * 8
+      d.bloom.visible = true
+    }
+    if (s > 0.5) {
+      d.staffT = -1
+      if (d.staff) d.staff.rotation.z = -0.3
+      if (d.bloom) d.bloom.visible = false
+    }
+  }
+
+  // Usopp shot pose
+  if (shooting) {
+    d.shotT += opts.delta ?? 0.016
+    d.leftArm.rotation.x = -1.2
+    d.rightArm.rotation.x = -0.9
+    if (d.shotT > 0.35) d.shotT = -1
+  }
+
+  if (!attacking) {
+    const swimming = opts.swimming || d.swimming
+    const climbing = opts.climbing || d.climbing
+
+    if (climbing) {
+      const swing = Math.sin(t * 10) * 0.5
+      d.leftArm.rotation.x = -1.2 + swing
+      d.rightArm.rotation.x = -1.2 - swing
+      d.leftLeg.rotation.x = swing * 0.5
+      d.rightLeg.rotation.x = -swing * 0.5
+      d.hips.rotation.x = 0.15
+    } else if (swimming) {
       const rate = moving ? 10 : 3
       const swing = Math.sin(t * rate) * (moving ? 0.85 : 0.25)
       d.leftArm.rotation.x = -0.6 + swing
@@ -521,7 +1048,12 @@ export function updateCharacterAnim(char, moving, running, t, opts = {}) {
   // Gear 5 body bounce + cloud swirl
   if (d.gear5) {
     const bounce = 1 + Math.sin(t * 6) * 0.06
-    char.scale.set(1 / Math.sqrt(bounce), bounce, 1 / Math.sqrt(bounce))
+    const base = char.userData._baseScale || 1
+    char.scale.set(
+      (base / Math.sqrt(bounce)),
+      base * bounce,
+      (base / Math.sqrt(bounce)),
+    )
     d.gearClouds.rotation.y = t * 1.5
     d.gearClouds.children.forEach((puff, i) => {
       puff.position.y = 0.15 + Math.sin(t * 3 + i) * 0.08

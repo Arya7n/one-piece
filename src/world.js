@@ -1,14 +1,17 @@
 import * as THREE from 'three'
 
 export const WORLD = {
-  size: 180,
-  segments: 160,
-  sailRadius: 120,
+  size: 320,
+  segments: 200,
+  sailRadius: 220,
   islands: [
-    { x: 0, z: 0, r: 40, h: 1 },
-    { x: 58, z: -8, r: 24, h: 0.95 },
-    { x: -30, z: 55, r: 18, h: 0.9 },
-    { x: 35, z: 48, r: 14, h: 0.85 },
+    { x: 0, z: 0, r: 52, h: 1 },
+    { x: 95, z: -12, r: 32, h: 0.95 },
+    { x: -55, z: 85, r: 26, h: 0.92 },
+    { x: 70, z: 75, r: 22, h: 0.88 },
+    { x: -90, z: -40, r: 28, h: 0.9 },
+    { x: 20, z: -95, r: 24, h: 0.85 },
+    { x: -40, z: -70, r: 18, h: 0.8 },
   ],
 }
 
@@ -31,12 +34,21 @@ export function islandHeight(x, z) {
   for (const isl of WORLD.islands) {
     best = Math.max(best, blobHeight(x, z, isl.x, isl.z, isl.r, isl.h))
   }
-  // Shallow sandbars / bridge path between main and east island
-  const bridgeZ = -4
-  const along = THREE.MathUtils.clamp((x - 28) / 28, 0, 1)
-  if (x > 28 && x < 56 && Math.abs(z - bridgeZ) < 3.5) {
-    const ridge = 0.55 - Math.abs(z - bridgeZ) * 0.12
-    best = Math.max(best, ridge * (0.6 + along * 0.4))
+  // Sandbar bridges between nearby islands
+  const bridges = [
+    { x0: 40, x1: 88, z: -6, halfW: 4 },
+    { x0: 25, x1: 55, z: 55, halfW: 3.5, alongAxis: 'diag' },
+  ]
+  // Main → east pier path
+  if (x > 40 && x < 92 && Math.abs(z - -6) < 4) {
+    const along = THREE.MathUtils.clamp((x - 40) / 52, 0, 1)
+    const ridge = 0.55 - Math.abs(z + 6) * 0.1
+    best = Math.max(best, ridge * (0.55 + along * 0.4))
+  }
+  // Main → south sandbar
+  if (z < -40 && z > -90 && Math.abs(x - 8) < 5) {
+    const along = THREE.MathUtils.clamp((-z - 40) / 50, 0, 1)
+    best = Math.max(best, 0.4 * (0.5 + along * 0.3))
   }
   return best
 }
@@ -55,8 +67,11 @@ export const SWIM_LAND_THRESHOLD = 0.12
 /**
  * Stand on land, or swim in the ocean. Soft world boundary only —
  * no longer pushes you out of the water.
+ * @param {object} [opts]
+ * @param {boolean} [opts.airborne] — keep vertical velocity (jump); only clamp XZ
+ * @returns {{ land: number, swimming: boolean }}
  */
-export function applyTerrainOrSwim(obj) {
+export function applyTerrainOrSwim(obj, opts = {}) {
   let x = obj.position.x
   let z = obj.position.z
 
@@ -71,6 +86,10 @@ export function applyTerrainOrSwim(obj) {
   obj.position.x = x
   obj.position.z = z
 
+  if (opts.airborne) {
+    return { land, swimming: land <= SWIM_LAND_THRESHOLD }
+  }
+
   if (land > SWIM_LAND_THRESHOLD) {
     obj.position.y = land
     obj.userData.swimming = false
@@ -79,6 +98,7 @@ export function applyTerrainOrSwim(obj) {
     obj.position.y = WATER_SURFACE - 0.72
     obj.userData.swimming = true
   }
+  return { land, swimming: !!obj.userData.swimming }
 }
 
 /** @deprecated use applyTerrainOrSwim — kept for any leftover imports */
@@ -214,11 +234,10 @@ function makeWantedBoard(mats) {
 
 function makeBridge(mats) {
   const g = new THREE.Group()
-  for (let i = 0; i < 18; i++) {
-    const x = 30 + i * 1.4
-    const z = -4 + Math.sin(i * 0.4) * 0.15
-    const plank = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.18, 2.4), mats.wood)
-    place(plank, x, z, 0.25)
+  for (let i = 0; i < 36; i++) {
+    const x = 42 + i * 1.4
+    const z = -6 + Math.sin(i * 0.35) * 0.2
+    const plank = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.18, 2.6), mats.wood)
     plank.position.x = x
     plank.position.z = z
     plank.position.y = Math.max(groundY(x, z), 0.35) + 0.15
@@ -226,7 +245,7 @@ function makeBridge(mats) {
     plank.receiveShadow = true
     g.add(plank)
     if (i % 3 === 0) {
-      for (const side of [-1.3, 1.3]) {
+      for (const side of [-1.4, 1.4]) {
         const rail = new THREE.Mesh(
           new THREE.CylinderGeometry(0.06, 0.07, 1.1, 5),
           mats.woodDark,
@@ -336,7 +355,7 @@ export function buildWorld(scene) {
   scene.add(terrain)
 
   const water = new THREE.Mesh(
-    new THREE.CircleGeometry(140, 72),
+    new THREE.CircleGeometry(250, 96),
     new THREE.MeshStandardMaterial({
       color: 0x1e90c8,
       roughness: 0.2,
@@ -358,15 +377,27 @@ export function buildWorld(scene) {
     [18, -10],
     [-8, 18],
     [8, -18],
-    [50, -14],
-    [62, -2],
-    [55, 6],
-    [48, 4],
-    [-28, 48],
-    [-35, 58],
-    [-22, 60],
-    [38, 45],
-    [32, 52],
+    [85, -18],
+    [100, -8],
+    [92, 4],
+    [78, 2],
+    [-50, 78],
+    [-62, 90],
+    [-45, 95],
+    [68, 70],
+    [78, 80],
+    [62, 82],
+    [-85, -35],
+    [-95, -48],
+    [-80, -50],
+    [15, -90],
+    [28, -100],
+    [8, -85],
+    [-38, -68],
+    [-48, -75],
+    [35, 20],
+    [-25, 30],
+    [50, -40],
   ]
   for (const [x, z] of palmSpots) {
     if (!isWalkable(x, z)) continue
@@ -402,7 +433,7 @@ export function buildWorld(scene) {
 
   // Watchtower on east island
   const tower = makeWatchtower(mats)
-  place(tower, 58, -6)
+  place(tower, 95, -10)
   scene.add(tower)
 
   // North rocky camp
@@ -422,7 +453,7 @@ export function buildWorld(scene) {
   )
   flame.position.y = 0.7
   campFire.add(flame)
-  place(campFire, -30, 55, 0)
+  place(campFire, -55, 85, 0)
   scene.add(campFire)
 
   // Pier from beach straight to the Merry dock
@@ -451,9 +482,9 @@ export function buildWorld(scene) {
   scene.add(pier)
 
   const eastPier = new THREE.Group()
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 8; i++) {
     const plank = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.15, 1.0), mats.wood)
-    plank.position.set(68 + i * 0.05, 0.4, -4 + i * 0.9)
+    plank.position.set(108 + i * 0.05, 0.4, -8 + i * 0.9)
     eastPier.add(plank)
   }
   scene.add(eastPier)
@@ -500,17 +531,24 @@ export function buildWorld(scene) {
     [-5, 8],
     [10, -8],
     [-15, 2],
-    [45, -10],
-    [60, 2],
-    [52, -18],
-    [-32, 50],
-    [-25, 58],
-    [36, 48],
+    [85, -14],
+    [98, 2],
+    [90, -22],
+    [-52, 80],
+    [-60, 92],
+    [68, 72],
     [8, 16],
     [-18, -10],
     [22, 6],
-    [40, -2],
-    [-4, 22],
+    [-88, -38],
+    [-95, -50],
+    [18, -92],
+    [25, -100],
+    [-42, -72],
+    [40, 30],
+    [-30, 40],
+    [70, 60],
+    [50, -50],
   ]
   for (const [x, z] of berrySpots) {
     if (!isWalkable(x, z)) continue
@@ -522,9 +560,12 @@ export function buildWorld(scene) {
 
   const chests = []
   for (const [x, z] of [
-    [56, 4],
-    [-34, 52],
+    [98, 6],
+    [-58, 82],
     [-11, -12],
+    [-88, -42],
+    [22, -92],
+    [72, 78],
   ]) {
     const chest = makeChest()
     place(chest, x, z, 0)
@@ -538,10 +579,13 @@ export function buildWorld(scene) {
     [3, 4],
     [4.5, 3.2],
     [6, 5],
-    [48, -6],
-    [50, -5],
-    [-28, 52],
+    [88, -10],
+    [92, -8],
+    [-52, 82],
     [-8, -7],
+    [-90, -45],
+    [20, -88],
+    [70, 70],
   ]) {
     const barrel = makeBreakableBarrel(mats)
     place(barrel, x, z, 0.5)
@@ -586,13 +630,42 @@ export function buildWorld(scene) {
       g.add(puff)
     }
     g.position.set(
-      (Math.random() - 0.5) * 120,
-      26 + Math.random() * 12,
-      (Math.random() - 0.5) * 120,
+      (Math.random() - 0.5) * 220,
+      28 + Math.random() * 16,
+      (Math.random() - 0.5) * 220,
     )
     scene.add(g)
     clouds.push(g)
   }
+
+  // Devil Fruit pickups
+  const fruits = []
+  const fruitDefs = [
+    { x: 12, z: -12, type: 'gomu', label: 'Gomu Gomu', color: 0xff5252, buff: 'stretch' },
+    { x: 92, z: 10, type: 'mero', label: 'Mero Mero', color: 0xff80ab, buff: 'charm' },
+    { x: -50, z: 78, type: 'hana', label: 'Hana Hana', color: 0xce93d8, buff: 'bloom' },
+    { x: 68, z: 78, type: 'suna', label: 'Suna Suna', color: 0xffe082, buff: 'speed' },
+    { x: -85, z: -45, type: 'gomu', label: 'Gomu Gomu', color: 0xff5252, buff: 'stretch' },
+    { x: 18, z: -88, type: 'suna', label: 'Suna Suna', color: 0xffe082, buff: 'speed' },
+  ]
+  for (const def of fruitDefs) {
+    if (!isWalkable(def.x, def.z)) continue
+    const fruit = makeDevilFruit(def)
+    place(fruit, def.x, def.z, 0.85)
+    scene.add(fruit)
+    fruits.push(fruit)
+  }
+
+  // Climb points (watchtower + village roof-ish poles)
+  const climbPoints = [
+    { x: 95, z: -10, topY: 5.2, radius: 2.2 },
+    { x: -10, z: -6, topY: 2.8, radius: 1.8 },
+    { x: -2, z: 2, topY: 3.2, radius: 1.2 },
+    { x: -88, z: -40, topY: 3.0, radius: 2.0 },
+  ]
+
+  // Meat is heal pickup
+  meat.userData = { kind: 'meat', taken: false }
 
   return {
     water,
@@ -603,8 +676,53 @@ export function buildWorld(scene) {
     berries,
     chests,
     barrels,
+    fruits,
+    climbPoints,
+    meat,
     mats,
   }
+}
+
+function makeDevilFruit(def) {
+  const g = new THREE.Group()
+  const body = new THREE.Mesh(
+    new THREE.SphereGeometry(0.35, 12, 10),
+    new THREE.MeshStandardMaterial({
+      color: def.color,
+      roughness: 0.55,
+      metalness: 0.15,
+      emissive: def.color,
+      emissiveIntensity: 0.25,
+    }),
+  )
+  body.scale.set(1, 1.15, 1)
+  g.add(body)
+  // Spiral pattern dots
+  for (let i = 0; i < 6; i++) {
+    const swirl = new THREE.Mesh(
+      new THREE.TorusGeometry(0.18, 0.03, 4, 10),
+      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 }),
+    )
+    swirl.position.y = -0.15 + i * 0.08
+    swirl.rotation.x = Math.PI / 2
+    swirl.scale.setScalar(0.7 + i * 0.08)
+    g.add(swirl)
+  }
+  const stem = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.03, 0.04, 0.2, 5),
+    mat(0x5d4037),
+  )
+  stem.position.y = 0.45
+  g.add(stem)
+  g.userData = {
+    kind: 'fruit',
+    taken: false,
+    type: def.type,
+    label: def.label,
+    buff: def.buff,
+    spin: Math.random() * Math.PI,
+  }
+  return g
 }
 
 function makeShip(mats) {
