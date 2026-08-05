@@ -423,7 +423,7 @@ function recallShipHome() {
     return
   }
   const home = ship.userData.home
-  ship.position.set(home.x, 0.2, home.z)
+  ship.position.set(home.x, 0.35, home.z)
   ship.rotation.set(0, home.rot, 0)
   ship.userData.speed = 0
   setStatus('Going Merry returned to the pier!')
@@ -444,17 +444,18 @@ function boardShip() {
   aboard.clear()
   sfx.board()
 
+  // Boarding seats — slightly higher for new deck
   const seats = [
-    [-1.1, 1.45, 1.5],
-    [1.1, 1.45, 1.5],
-    [-1.5, 1.45, -1],
-    [1.5, 1.45, -1],
-    [0, 1.45, 0],
-    [-0.8, 1.45, 2.5],
-    [0.8, 1.45, 2.5],
-    [-1.6, 1.45, 0.2],
-    [1.6, 1.45, 0.2],
-    [0, 1.45, -2.5],
+    [-1.2, 1.65, 0.5],
+    [1.2, 1.65, 0.5],
+    [-1.5, 1.65, -1.2],
+    [1.5, 1.65, -1.2],
+    [0, 1.65, -0.2],
+    [-0.9, 1.65, 1.8],
+    [0.9, 1.65, 1.8],
+    [-1.6, 1.65, -2.2],
+    [1.6, 1.65, -2.2],
+    [0, 1.65, -3.0],
   ]
 
   boarding.forEach((id, i) => {
@@ -1189,7 +1190,14 @@ function animate() {
   }
   flagPole.children[1].rotation.y = Math.sin(t * 2) * 0.15
   if (ship.userData.sail) {
-    ship.userData.sail.rotation.y = Math.sin(t * 1.3) * 0.05
+    ship.userData.sail.rotation.y = Math.sin(t * 1.3) * 0.04
+    ship.userData.sail.scale.x = 1 + Math.sin(t * 1.6) * 0.02
+  }
+  if (ship.userData.topSail) {
+    ship.userData.topSail.rotation.y = Math.sin(t * 1.5 + 1) * 0.05
+  }
+  if (ship.userData.wheel) {
+    ship.userData.wheel.rotation.z = Math.sin(t * 0.4) * 0.15
   }
 
   controls.update()

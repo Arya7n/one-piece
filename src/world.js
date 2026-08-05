@@ -110,6 +110,118 @@ function mat(color, opts = {}) {
   return new THREE.MeshStandardMaterial({ color, roughness: 0.85, ...opts })
 }
 
+/** Procedural Straw Hat / Mugiwara Jolly Roger (canvas texture). */
+function createJollyRogerTexture(size = 512) {
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  const s = size
+
+  // Black flag field
+  ctx.fillStyle = '#111111'
+  ctx.fillRect(0, 0, s, s)
+
+  const cx = s * 0.5
+  const cy = s * 0.52
+
+  // Crossed bones
+  ctx.save()
+  ctx.translate(cx, cy + s * 0.06)
+  ctx.strokeStyle = '#f5f5f5'
+  ctx.fillStyle = '#f5f5f5'
+  ctx.lineWidth = s * 0.055
+  ctx.lineCap = 'round'
+  for (const ang of [-0.55, 0.55]) {
+    ctx.save()
+    ctx.rotate(ang)
+    ctx.beginPath()
+    ctx.moveTo(-s * 0.28, 0)
+    ctx.lineTo(s * 0.28, 0)
+    ctx.stroke()
+    // bone knobs
+    for (const x of [-s * 0.28, s * 0.28]) {
+      ctx.beginPath()
+      ctx.arc(x, -s * 0.035, s * 0.045, 0, Math.PI * 2)
+      ctx.arc(x, s * 0.035, s * 0.045, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    ctx.restore()
+  }
+  ctx.restore()
+
+  // Skull
+  ctx.fillStyle = '#f7f3e8'
+  ctx.beginPath()
+  ctx.ellipse(cx, cy - s * 0.02, s * 0.2, s * 0.22, 0, 0, Math.PI * 2)
+  ctx.fill()
+  // jaw
+  ctx.beginPath()
+  ctx.ellipse(cx, cy + s * 0.12, s * 0.14, s * 0.1, 0, 0, Math.PI * 2)
+  ctx.fill()
+
+  // Eye sockets
+  ctx.fillStyle = '#111111'
+  ctx.beginPath()
+  ctx.ellipse(cx - s * 0.07, cy - s * 0.02, s * 0.045, s * 0.055, 0, 0, Math.PI * 2)
+  ctx.ellipse(cx + s * 0.07, cy - s * 0.02, s * 0.045, s * 0.055, 0, 0, Math.PI * 2)
+  ctx.fill()
+
+  // Smile / teeth line
+  ctx.strokeStyle = '#111111'
+  ctx.lineWidth = s * 0.012
+  ctx.beginPath()
+  ctx.arc(cx, cy + s * 0.08, s * 0.08, 0.15, Math.PI - 0.15)
+  ctx.stroke()
+  ctx.beginPath()
+  for (let i = -2; i <= 2; i++) {
+    ctx.moveTo(cx + i * s * 0.03, cy + s * 0.08)
+    ctx.lineTo(cx + i * s * 0.03, cy + s * 0.14)
+  }
+  ctx.stroke()
+
+  // Straw hat brim
+  ctx.fillStyle = '#e0b040'
+  ctx.beginPath()
+  ctx.ellipse(cx, cy - s * 0.2, s * 0.28, s * 0.055, 0, 0, Math.PI * 2)
+  ctx.fill()
+  // Crown
+  ctx.beginPath()
+  ctx.ellipse(cx, cy - s * 0.28, s * 0.15, s * 0.1, 0, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.fillRect(cx - s * 0.15, cy - s * 0.32, s * 0.3, s * 0.1)
+
+  // Red ribbon
+  ctx.fillStyle = '#c62828'
+  ctx.beginPath()
+  ctx.ellipse(cx, cy - s * 0.2, s * 0.16, s * 0.028, 0, 0, Math.PI * 2)
+  ctx.fill()
+
+  const tex = new THREE.CanvasTexture(canvas)
+  tex.colorSpace = THREE.SRGBColorSpace
+  tex.anisotropy = 4
+  tex.needsUpdate = true
+  return tex
+}
+
+function makeJollyRogerMaterial(opts = {}) {
+  const map = createJollyRogerTexture(opts.size ?? 512)
+  return new THREE.MeshStandardMaterial({
+    map,
+    roughness: 0.85,
+    metalness: 0.05,
+    side: opts.side ?? THREE.DoubleSide,
+    transparent: !!opts.transparent,
+    alphaTest: opts.alphaTest ?? 0,
+  })
+}
+
+function makeJollyRogerFlag(w = 1.6, h = 1.05) {
+  const matFlag = makeJollyRogerMaterial()
+  const flag = new THREE.Mesh(new THREE.PlaneGeometry(w, h), matFlag)
+  return flag
+}
+
 function place(obj, x, z, yOff = 0) {
   obj.position.set(x, groundY(x, z) + yOff, z)
   return obj
@@ -506,7 +618,7 @@ export function buildWorld(scene) {
   place(meat, 2.5, -1.5, 0.35)
   scene.add(meat)
 
-  // Flag
+  // Flag — Straw Hat Jolly Roger
   const flagPole = new THREE.Group()
   const pole = new THREE.Mesh(
     new THREE.CylinderGeometry(0.06, 0.08, 3.5, 6),
@@ -514,8 +626,8 @@ export function buildWorld(scene) {
   )
   pole.position.y = 1.75
   flagPole.add(pole)
-  const flag = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.9), mats.red)
-  flag.position.set(0.7, 3.1, 0)
+  const flag = makeJollyRogerFlag(1.6, 1.05)
+  flag.position.set(0.85, 3.1, 0)
   flagPole.add(flag)
   place(flagPole, -2, 2)
   scene.add(flagPole)
@@ -729,74 +841,446 @@ function makeShip(mats) {
   const ship = new THREE.Group()
   ship.name = 'GoingMerry'
 
-  const hull = new THREE.Mesh(new THREE.BoxGeometry(5.5, 1.8, 12), mats.wood)
-  hull.position.y = 0.4
-  hull.castShadow = true
-  ship.add(hull)
+  const wood = mats.wood
+  const woodDark = mats.woodDark
+  const cream = mat(0xf5f0e6, { roughness: 0.8 })
+  const pink = mat(0xffb6c1, { roughness: 0.75 })
+  const black = mat(0x222222)
+  const redRoof = mats.roof
+  const brass = new THREE.MeshStandardMaterial({
+    color: 0xd4a017,
+    metalness: 0.65,
+    roughness: 0.35,
+  })
 
-  const bow = new THREE.Mesh(new THREE.ConeGeometry(2.2, 4, 4), mats.wood)
-  bow.rotation.x = -Math.PI / 2
-  bow.position.set(0, 0.5, -7)
-  ship.add(bow)
+  // --- Hull: layered caravel shape ---
+  const hullGroup = new THREE.Group()
 
-  const deck = new THREE.Mesh(new THREE.BoxGeometry(5.2, 0.15, 11), mats.woodDark)
-  deck.position.y = 1.35
-  deck.receiveShadow = true
-  ship.add(deck)
-
-  const mast = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.15, 0.2, 9, 8),
-    mats.woodDark,
+  // Keel
+  const keel = new THREE.Mesh(
+    new THREE.BoxGeometry(0.35, 0.7, 11.5),
+    woodDark,
   )
-  mast.position.set(0, 5.5, 0)
-  ship.add(mast)
+  keel.position.set(0, -0.15, 0.2)
+  keel.castShadow = true
+  hullGroup.add(keel)
 
-  const sail = new THREE.Mesh(new THREE.PlaneGeometry(5, 4.5), mats.sail)
-  sail.position.set(0, 5.2, 0.8)
-  ship.add(sail)
-
-  const jolly = new THREE.Mesh(new THREE.CircleGeometry(0.55, 12), mats.red)
-  jolly.position.set(0, 5.5, 0.85)
-  ship.add(jolly)
-
-  const head = new THREE.Mesh(
-    new THREE.SphereGeometry(0.7, 10, 8),
-    mat(0xf5f0e6),
+  // Lower hull (wider belly)
+  const lower = new THREE.Mesh(
+    new THREE.BoxGeometry(5.2, 1.1, 11.2),
+    wood,
   )
-  head.position.set(0, 1.8, -8.2)
-  ship.add(head)
-  const snout = new THREE.Mesh(new THREE.SphereGeometry(0.35, 8, 8), mat(0xffc0cb))
-  snout.position.set(0, 1.55, -8.7)
-  ship.add(snout)
+  lower.position.set(0, 0.35, 0.15)
+  lower.castShadow = true
+  lower.receiveShadow = true
+  hullGroup.add(lower)
 
-  for (const x of [-2.4, 2.4]) {
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.5, 10), mats.woodDark)
-    rail.position.set(x, 1.7, 0)
-    ship.add(rail)
+  // Bilge curve suggestion — side planks angled
+  for (const side of [-1, 1]) {
+    const bilge = new THREE.Mesh(
+      new THREE.BoxGeometry(0.55, 1.0, 10.8),
+      wood,
+    )
+    bilge.position.set(side * 2.55, 0.45, 0.15)
+    bilge.rotation.z = side * -0.35
+    bilge.castShadow = true
+    hullGroup.add(bilge)
   }
 
+  // Upper gunwale / sheer
+  const upper = new THREE.Mesh(
+    new THREE.BoxGeometry(5.0, 0.7, 11.0),
+    wood,
+  )
+  upper.position.set(0, 1.15, 0.1)
+  upper.castShadow = true
+  hullGroup.add(upper)
+
+  // Waterline stripe
+  const stripe = new THREE.Mesh(
+    new THREE.BoxGeometry(5.35, 0.18, 11.3),
+    mat(0xc62828),
+  )
+  stripe.position.set(0, 0.85, 0.15)
+  hullGroup.add(stripe)
+
+  // Bow taper (stacked wedges)
+  for (let i = 0; i < 5; i++) {
+    const t = i / 4
+    const w = 5.0 * (1 - t * 0.75)
+    const h = 1.6 * (1 - t * 0.15)
+    const section = new THREE.Mesh(new THREE.BoxGeometry(w, h, 1.15), wood)
+    section.position.set(0, 0.55 + t * 0.15, -5.2 - i * 0.95)
+    section.castShadow = true
+    hullGroup.add(section)
+  }
+  // Sharp stem
+  const stem = new THREE.Mesh(new THREE.ConeGeometry(1.1, 2.8, 4), wood)
+  stem.rotation.x = -Math.PI / 2
+  stem.position.set(0, 0.7, -10.2)
+  stem.castShadow = true
+  hullGroup.add(stem)
+
+  // Stern overhang
+  const stern = new THREE.Mesh(new THREE.BoxGeometry(4.6, 1.5, 2.2), wood)
+  stern.position.set(0, 0.7, 6.4)
+  stern.castShadow = true
+  hullGroup.add(stern)
+
+  // Rudder
+  const rudder = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.6, 1.4), woodDark)
+  rudder.position.set(0, 0.2, 7.6)
+  rudder.castShadow = true
+  hullGroup.add(rudder)
+
+  ship.add(hullGroup)
+
+  // --- Deck ---
+  const deck = new THREE.Mesh(
+    new THREE.BoxGeometry(4.6, 0.12, 10.5),
+    woodDark,
+  )
+  deck.position.set(0, 1.52, 0.2)
+  deck.receiveShadow = true
+  deck.castShadow = true
+  ship.add(deck)
+
+  // Deck planks (visual lines)
+  for (let i = -4; i <= 4; i++) {
+    const plankLine = new THREE.Mesh(
+      new THREE.BoxGeometry(4.5, 0.02, 0.06),
+      mat(0x4e342e),
+    )
+    plankLine.position.set(0, 1.59, i * 1.1)
+    ship.add(plankLine)
+  }
+
+  // Raised forecastle
+  const forecastle = new THREE.Mesh(
+    new THREE.BoxGeometry(3.8, 0.35, 2.4),
+    wood,
+  )
+  forecastle.position.set(0, 1.75, -4.2)
+  forecastle.castShadow = true
+  ship.add(forecastle)
+
+  // --- Stern cabin (Merry classic) ---
+  const cabin = new THREE.Group()
+  const cabinBody = new THREE.Mesh(
+    new THREE.BoxGeometry(3.6, 1.8, 3.2),
+    cream,
+  )
+  cabinBody.position.y = 0.9
+  cabinBody.castShadow = true
+  cabin.add(cabinBody)
+  // Windows
+  for (const [x, z] of [
+    [-1.1, 1.62],
+    [0, 1.62],
+    [1.1, 1.62],
+    [-1.1, -1.62],
+    [1.1, -1.62],
+  ]) {
+    const win = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.55, 0.55),
+      new THREE.MeshStandardMaterial({
+        color: 0x81d4fa,
+        emissive: 0x4fc3f7,
+        emissiveIntensity: 0.2,
+        roughness: 0.3,
+        metalness: 0.1,
+        side: THREE.DoubleSide,
+      }),
+    )
+    win.position.set(x, 1.0, z)
+    cabin.add(win)
+  }
+  // Door
+  const door = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.1, 0.08), woodDark)
+  door.position.set(0, 0.55, 1.65)
+  cabin.add(door)
+  // Red roof
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(2.6, 1.3, 4), redRoof)
+  roof.position.y = 2.35
+  roof.rotation.y = Math.PI / 4
+  roof.castShadow = true
+  cabin.add(roof)
+  // Chimney
+  const chimney = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.15, 0.18, 0.7, 6),
+    woodDark,
+  )
+  chimney.position.set(1.1, 2.5, -0.4)
+  cabin.add(chimney)
+  cabin.position.set(0, 1.52, 4.2)
+  ship.add(cabin)
+
+  // --- Railings ---
+  for (const side of [-1, 1]) {
+    for (let i = 0; i < 12; i++) {
+      const z = -5.2 + i * 0.95
+      if (z > 2.6 && z < 5.8) continue // cabin gap
+      const post = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.06, 0.07, 0.85, 5),
+        woodDark,
+      )
+      post.position.set(side * 2.15, 1.95, z)
+      post.castShadow = true
+      ship.add(post)
+    }
+    const railTop = new THREE.Mesh(
+      new THREE.BoxGeometry(0.1, 0.1, 9.5),
+      woodDark,
+    )
+    railTop.position.set(side * 2.15, 2.35, -0.3)
+    ship.add(railTop)
+  }
+  // Bow rail curve
+  const bowRail = new THREE.Mesh(
+    new THREE.TorusGeometry(1.6, 0.07, 6, 12, Math.PI),
+    woodDark,
+  )
+  bowRail.rotation.x = Math.PI / 2
+  bowRail.rotation.z = Math.PI
+  bowRail.position.set(0, 2.2, -5.8)
+  ship.add(bowRail)
+
+  // --- Mast, yards, rigging ---
+  const mast = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.14, 0.22, 11, 10),
+    woodDark,
+  )
+  mast.position.set(0, 6.2, -0.5)
+  mast.castShadow = true
+  ship.add(mast)
+
+  // Crow's nest
+  const nest = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.75, 0.35, 10), wood)
+  nest.position.set(0, 9.5, -0.5)
+  nest.castShadow = true
+  ship.add(nest)
+  const nestRail = new THREE.Mesh(
+    new THREE.TorusGeometry(0.72, 0.05, 6, 12),
+    woodDark,
+  )
+  nestRail.rotation.x = Math.PI / 2
+  nestRail.position.set(0, 9.75, -0.5)
+  ship.add(nestRail)
+
+  // Yard (crossbeam)
+  const yard = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.08, 0.1, 6.2, 8),
+    woodDark,
+  )
+  yard.rotation.z = Math.PI / 2
+  yard.position.set(0, 7.4, -0.5)
+  ship.add(yard)
+
+  // Main sail + Mugiwara Jolly Roger
+  const sailMat = new THREE.MeshStandardMaterial({
+    color: 0xfff8e7,
+    roughness: 0.95,
+    side: THREE.DoubleSide,
+  })
+  const sail = new THREE.Mesh(new THREE.PlaneGeometry(5.4, 4.8), sailMat)
+  sail.position.set(0, 5.4, -0.15)
+  sail.castShadow = true
+  ship.add(sail)
+
+  const jolly = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.4, 2.4),
+    makeJollyRogerMaterial(),
+  )
+  jolly.position.set(0, 5.5, -0.1)
+  ship.add(jolly)
+
+  // Topsail smaller
+  const topSail = new THREE.Mesh(
+    new THREE.PlaneGeometry(3.2, 1.8),
+    sailMat.clone(),
+  )
+  topSail.position.set(0, 8.3, -0.2)
+  ship.add(topSail)
+
+  // Bowsprit
+  const bowsprit = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.08, 0.12, 4.5, 6),
+    woodDark,
+  )
+  bowsprit.rotation.x = Math.PI / 2.4
+  bowsprit.position.set(0, 2.4, -8.5)
+  ship.add(bowsprit)
+
+  // Foresail triangle
+  const foreSail = new THREE.Mesh(
+    new THREE.BufferGeometry(),
+    sailMat.clone(),
+  )
+  {
+    const verts = new Float32Array([
+      0, 4.5, -6.5,
+      0, 2.2, -10.2,
+      0, 2.0, -6.8,
+    ])
+    foreSail.geometry.setAttribute('position', new THREE.BufferAttribute(verts, 3))
+    foreSail.geometry.computeVertexNormals()
+  }
+  ship.add(foreSail)
+
+  // Simple rope lines (cylinders)
+  for (const side of [-1, 1]) {
+    const stay = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.025, 0.025, 8.5, 4),
+      black,
+    )
+    stay.position.set(side * 1.8, 5.2, 1.5)
+    stay.rotation.z = side * 0.28
+    stay.rotation.x = 0.15
+    ship.add(stay)
+  }
+
+  // --- Sheep figurehead (Merry) ---
+  const figure = new THREE.Group()
+  const neck = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.35, 0.45, 1.2, 8),
+    cream,
+  )
+  neck.rotation.x = Math.PI / 2.5
+  neck.position.set(0, 0.2, 0.3)
+  figure.add(neck)
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.85, 14, 12), cream)
+  head.scale.set(1, 1.05, 1.15)
+  head.position.set(0, 0.55, -0.5)
+  head.castShadow = true
+  figure.add(head)
+
+  // Snout
+  const snout = new THREE.Mesh(new THREE.SphereGeometry(0.42, 10, 8), pink)
+  snout.scale.set(1, 0.85, 1.1)
+  snout.position.set(0, 0.25, -1.15)
+  figure.add(snout)
+  // Nostrils
+  for (const sx of [-0.12, 0.12]) {
+    const n = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 6), mat(0xe57373))
+    n.position.set(sx, 0.28, -1.45)
+    figure.add(n)
+  }
+
+  // Eyes
+  for (const sx of [-0.28, 0.28]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 8), mat(0xffffff))
+    eye.position.set(sx, 0.7, -1.0)
+    figure.add(eye)
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 6), black)
+    pupil.position.set(sx, 0.7, -1.1)
+    figure.add(pupil)
+  }
+
+  // Floppy ears
+  for (const side of [-1, 1]) {
+    const ear = new THREE.Mesh(
+      new THREE.SphereGeometry(0.28, 8, 8),
+      cream,
+    )
+    ear.scale.set(0.5, 1.1, 0.7)
+    ear.position.set(side * 0.75, 0.9, -0.35)
+    ear.rotation.z = side * 0.5
+    figure.add(ear)
+  }
+
+  // Horns / wool tuft on top
+  const tuft = new THREE.Mesh(new THREE.SphereGeometry(0.35, 8, 6), cream)
+  tuft.position.set(0, 1.25, -0.35)
+  figure.add(tuft)
+
+  // Smile
+  const smile = new THREE.Mesh(
+    new THREE.TorusGeometry(0.2, 0.035, 6, 12, Math.PI),
+    mat(0x5d4037),
+  )
+  smile.position.set(0, 0.35, -1.35)
+  smile.rotation.set(Math.PI, 0, 0)
+  figure.add(smile)
+
+  figure.position.set(0, 1.9, -10.0)
+  figure.scale.setScalar(1.05)
+  ship.add(figure)
+
+  // Helm wheel at stern cabin front
+  const wheel = new THREE.Group()
+  const rim = new THREE.Mesh(
+    new THREE.TorusGeometry(0.45, 0.05, 6, 16),
+    woodDark,
+  )
+  wheel.add(rim)
+  for (let i = 0; i < 6; i++) {
+    const spoke = new THREE.Mesh(
+      new THREE.BoxGeometry(0.06, 0.9, 0.06),
+      woodDark,
+    )
+    spoke.rotation.z = (i / 6) * Math.PI
+    wheel.add(spoke)
+  }
+  const hub = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 8), brass)
+  wheel.add(hub)
+  wheel.position.set(0, 2.5, 2.35)
+  ship.add(wheel)
+
+  // Lanterns
+  for (const side of [-1, 1]) {
+    const lantern = new THREE.Mesh(
+      new THREE.SphereGeometry(0.15, 8, 8),
+      new THREE.MeshStandardMaterial({
+        color: 0xffecb3,
+        emissive: 0xffa000,
+        emissiveIntensity: 0.6,
+      }),
+    )
+    lantern.position.set(side * 2.0, 2.6, 5.5)
+    ship.add(lantern)
+  }
+
+  // Cannon ports
+  for (const side of [-1, 1]) {
+    for (const z of [-2.5, 0.5, 2.5]) {
+      const port = new THREE.Mesh(
+        new THREE.CircleGeometry(0.22, 10),
+        black,
+      )
+      port.position.set(side * 2.62, 0.95, z)
+      port.rotation.y = side * -Math.PI / 2
+      ship.add(port)
+    }
+  }
+
+  // Seats on deck midships
   const seatLuffy = new THREE.Object3D()
-  seatLuffy.position.set(-1.1, 1.45, 1.5)
+  seatLuffy.position.set(-1.2, 1.6, 0.5)
   ship.add(seatLuffy)
   const seatZoro = new THREE.Object3D()
-  seatZoro.position.set(1.1, 1.45, 1.5)
+  seatZoro.position.set(1.2, 1.6, 0.5)
   ship.add(seatZoro)
 
-  // Gangplank toward pier / beach (local +Z is stern)
-  const plank = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.12, 5.5), mats.wood)
-  plank.position.set(0, 1.05, 7.6)
-  plank.rotation.x = -0.22
+  // Gangplank (stern / +Z)
+  const plank = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.12, 5.2), wood)
+  plank.position.set(0, 1.15, 8.2)
+  plank.rotation.x = -0.28
+  plank.castShadow = true
   ship.add(plank)
 
-  // Docked tight against the pier — easy to walk on
-  ship.position.set(15.2, 0.2, 16.8)
+  // Docked at pier
+  ship.position.set(15.2, 0.35, 16.8)
   ship.rotation.y = Math.PI + 0.35
-  ship.scale.setScalar(0.85)
+  ship.scale.setScalar(0.78)
 
   ship.userData = {
     seatLuffy,
     seatZoro,
     sail,
+    topSail,
+    wheel,
+    figure,
     speed: 0,
     home: { x: 15.2, z: 16.8, rot: Math.PI + 0.35 },
   }
