@@ -801,17 +801,18 @@ export function buildWorld(scene) {
   }
 
   const chests = []
-  for (const [x, z] of [
-    [98, 6],
-    [-58, 82],
-    [-11, -12],
-    [-88, -42],
-    [22, -92],
-    [72, 78],
+  for (const [x, z, id] of [
+    [98, 6, 'east'],
+    [-58, 82, 'winter'],
+    [-11, -12, 'hub'],
+    [-88, -42, 'desert'],
+    [22, -92, 'south'],
+    [72, 78, 'north'],
   ]) {
     const chest = makeChest()
     place(chest, x, z, 0)
     chest.rotation.y = Math.random() * Math.PI
+    chest.userData.id = id
     scene.add(chest)
     chests.push(chest)
   }

@@ -109,6 +109,9 @@ export const sfx = {
     beep({ freq: 400, dur: 0.1, type: 'sine', gain: 0.05, slide: 200 })
     setTimeout(() => beep({ freq: 600, dur: 0.12, type: 'sine', gain: 0.05 }), 70)
   },
+  berry() {
+    beep({ freq: 660, dur: 0.08, type: 'triangle', gain: 0.05, slide: 80 })
+  },
   thunder() {
     noiseBurst({ dur: 0.35, gain: 0.12, filterFreq: 180 })
     beep({ freq: 60, dur: 0.3, type: 'sawtooth', gain: 0.08, slide: -30 })

@@ -21,7 +21,8 @@ Built with Vite: Gear 5 stretch attacks, sword-slash VFX, collectibles, and a bo
 - Nami **rain & lightning** attack; Usopp **sniper zoom (V / RMB)**
 - Sanji **cook station** (spend Berries for big heals / ATK feast)
 - Rising **wanted bounty** poster; berries & barrels **respawn**
-- **Quest beats** (3 chests → unlock Boss Island → defeat Sea King)
+- **Quest beats** (3 chests → unlock Boss Island → defeat Kaido)
+- **Progress saves** automatically (chests, quest, bounty, puzzles)
 - **Third-person follow camera** (drag to look, scroll to zoom)
 - Gear 5, unique attacks, Devil Fruits, chests, meat HP
 - Zoro occasionally wanders off on his own

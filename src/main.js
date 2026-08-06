@@ -40,11 +40,14 @@ import {
   createAdventureZones,
   tryZoneInteract,
   updateAdventureZones,
+  getZoneProgress,
+  applyZoneProgress,
 } from './zones.js'
 import { sfx } from './audio.js'
 import { createMobileGamepad } from './gamepad.js'
 import { createIntro, syncOrbitFromCamera } from './intro.js'
 import { createUserGuide } from './guide.js'
+import { loadProgress, saveProgress, clearProgress } from './save.js'
 
 const canvas = document.querySelector('#canvas')
 
@@ -305,7 +308,12 @@ hudRoot.innerHTML = `
 `
 document.body.appendChild(hudRoot)
 
-const userGuide = createUserGuide()
+const userGuide = createUserGuide({
+  onResetProgress() {
+    clearProgress()
+    window.location.reload()
+  },
+})
 const guideSlot = hudRoot.querySelector('#hud-guide-slot')
 guideSlot.replaceWith(userGuide.btn)
 document.body.appendChild(userGuide.panel)
@@ -363,11 +371,13 @@ const quest = createQuestSystem({
     setStatus('BOSS ISLAND UNLOCKED — sail southwest!')
     setTimeout(() => setStatus(''), 2800)
     addBounty(2_000_000, 'World Government noticed…')
+    persistProgress()
   },
   onBossDefeated() {
     addBounty(10_000_000, 'Kaido defeated!')
     setStatus('You cleared Boss Island!')
     refreshBossHud()
+    persistProgress()
     setTimeout(() => setStatus(''), 2500)
   },
 })
@@ -496,6 +506,73 @@ function refreshBossHud() {
   const pct = THREE.MathUtils.clamp(seaKing.userData.hp / seaKing.userData.maxHp, 0, 1)
   bossBarFill.style.width = `${pct * 100}%`
   bossHud.classList.toggle('boss-phase-rage', pct < 0.45)
+}
+
+function persistProgress() {
+  saveProgress({
+    berryCount,
+    chestsOpened,
+    barrelsSmashed,
+    playerHp,
+    crewBounty,
+    questStage: quest.stage,
+    bossUnlocked: quest.bossUnlocked,
+    bossDefeated: quest.bossDefeated,
+    openChestIds: chests
+      .filter((c) => c.userData.opened)
+      .map((c) => c.userData.id)
+      .filter(Boolean),
+    zones: getZoneProgress(adventureZones),
+  })
+}
+
+function applySavedProgress(data) {
+  if (!data) return false
+  berryCount = data.berryCount ?? berryCount
+  chestsOpened = data.chestsOpened ?? chestsOpened
+  barrelsSmashed = data.barrelsSmashed ?? barrelsSmashed
+  playerHp = data.playerHp ?? playerHp
+  crewBounty = data.crewBounty ?? crewBounty
+
+  const opened = new Set(data.openChestIds || [])
+  for (const chest of chests) {
+    if (!chest.userData.id || !opened.has(chest.userData.id)) continue
+    chest.userData.opened = true
+    if (chest.userData.lid) {
+      chest.userData.lid.rotation.x = -1.1
+      chest.userData.lid.position.z = -0.25
+    }
+  }
+
+  applyZoneProgress(adventureZones, data.zones)
+
+  quest.restore({
+    stage: data.questStage,
+    chestsOpened,
+    bossUnlocked: data.bossUnlocked,
+    bossDefeated: data.bossDefeated,
+  })
+
+  if (quest.bossUnlocked) {
+    setBossIslandUnlocked(true)
+    if (bossBarrier) bossBarrier.visible = false
+    if (seaKing && !quest.bossDefeated) {
+      seaKing.visible = true
+      seaKing.userData.alive = true
+      seaKing.userData.hp = seaKing.userData.maxHp
+      seaKing.userData.phase = 'idle'
+    }
+    if (quest.bossDefeated && seaKing) {
+      seaKing.visible = false
+      seaKing.userData.alive = false
+    }
+  }
+
+  bountyBoard?.userData.draw(crewBounty)
+  if (bountyBoard) bountyBoard.userData.bounty = crewBounty
+  refreshStats()
+  refreshBossHud()
+  return true
 }
 
 function damagePlayer(amount, reason = 'Kaido strikes!', from = null) {
@@ -958,10 +1035,12 @@ function tryInteract() {
       }
       refreshStats()
       sfx.chest()
+      persistProgress()
     } else {
       sfx.switch()
       setStatus(zoneHit.message || '')
       setTimeout(() => setStatus(''), 1600)
+      persistProgress()
     }
     return
   }
@@ -984,6 +1063,7 @@ function tryInteract() {
         setStatus(`Treasure! +5 Berry (${chestsOpened}/3 quest)`)
         setTimeout(() => setStatus(''), 1500)
       }
+      persistProgress()
       return
     }
   }
@@ -1063,6 +1143,7 @@ function hitBarrels(origin, range, damage) {
       refreshBossHud()
       sfx.smash()
       quest.onBossDefeated()
+      persistProgress()
     }
   }
   return hit
@@ -1300,6 +1381,7 @@ function updateBerries(t) {
       sfx.berry()
       setStatus(`Berry +1  (total ${berryCount})`)
       setTimeout(() => setStatus(''), 700)
+      persistProgress()
     }
   }
 }
@@ -2467,7 +2549,15 @@ function animate() {
 
 refreshStats()
 refreshCrewStrip()
-quest.onChestOpened(chestsOpened) // sync UI
+
+const saved = loadProgress()
+if (saved) {
+  applySavedProgress(saved)
+  setStatus('Progress restored')
+  setTimeout(() => setStatus(''), 1600)
+} else {
+  quest.onChestOpened(chestsOpened) // sync UI
+}
 
 intro = createIntro({
   camera,

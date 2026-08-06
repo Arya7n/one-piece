@@ -215,6 +215,7 @@ export function createAdventureZones(scene) {
   const ruinChest = makeRareChest()
   ruinChest.position.set(0, 0, 5.5)
   ruinChest.visible = false
+  ruinChest.userData.id = 'rare-desert'
   chamber.add(ruinChest)
 
   const exitPad = new THREE.Mesh(
@@ -287,6 +288,7 @@ export function createAdventureZones(scene) {
   const winterChest = makeRareChest()
   winterChest.position.set(-54, groundY(-54, 86), 86)
   winterChest.visible = false
+  winterChest.userData.id = 'rare-winter'
   scene.add(winterChest)
 
   const winter = {
@@ -344,6 +346,7 @@ export function createAdventureZones(scene) {
   )
   caveRoof.position.y = 2.8
   cave.add(caveRoof)
+  scene.add(cave)
 
   // Mouth marker buoy / rocks at surface edge
   const mouth = new THREE.Mesh(
@@ -360,16 +363,21 @@ export function createAdventureZones(scene) {
   mouth.position.set(caveCx, WATER_SURFACE - 0.3, caveCz)
   scene.add(mouth)
 
+  // Shore chest near the cove (easy island pickup — no dive needed)
   const caveChest = makeRareChest()
-  caveChest.position.set(0, 0.2, 0)
-  cave.add(caveChest)
-  scene.add(cave)
+  const shoreX = 22
+  const shoreZ = 14
+  caveChest.position.set(shoreX, groundY(shoreX, shoreZ), shoreZ)
+  caveChest.userData.id = 'rare-cove'
+  scene.add(caveChest)
 
+  // Keep empty cave as a landmark; treasure sits on the beach above
   const underwater = {
     cave,
     mouth,
     chest: caveChest,
     center: new THREE.Vector3(caveCx, WATER_SURFACE - 2.4, caveCz),
+    shore: new THREE.Vector3(shoreX, groundY(shoreX, shoreZ), shoreZ),
     radius: 5.5,
   }
 
@@ -379,6 +387,78 @@ export function createAdventureZones(scene) {
     windPads,
     underwater,
     chests: [ruinChest, winterChest, caveChest],
+  }
+}
+
+/** Snapshot puzzle / rare-chest progress for saving. */
+export function getZoneProgress(zones) {
+  return {
+    desertSolved: !!zones.desert.solved,
+    desertProgress: [...zones.desert.progress],
+    winterSolved: !!zones.winter.solved,
+    winterProgress: [...zones.winter.progress],
+    rareOpened: {
+      desert: !!zones.desert.chest.userData.opened,
+      winter: !!zones.winter.chest.userData.opened,
+      cove: !!zones.underwater.chest.userData.opened,
+    },
+  }
+}
+
+/** Restore zone puzzles from a save snapshot. */
+export function applyZoneProgress(zones, data) {
+  if (!data) return
+  const d = zones.desert
+  if (Array.isArray(data.desertProgress)) {
+    d.progress = [...data.desertProgress]
+    for (const rune of d.runes) {
+      const lit = d.progress.includes(rune.userData.index)
+      rune.userData.lit = lit
+      rune.userData.gem.material.emissiveIntensity = lit ? 1.2 : 0.15
+    }
+  }
+  if (data.desertSolved) {
+    d.solved = true
+    d.sealGate.visible = false
+    d.chest.visible = true
+  }
+  if (data.rareOpened?.desert) {
+    d.chest.userData.opened = true
+    d.chest.visible = true
+    d.chest.userData.lid.rotation.x = -1.1
+    d.solved = true
+    d.sealGate.visible = false
+  }
+
+  const w = zones.winter
+  if (Array.isArray(data.winterProgress)) {
+    w.progress = [...data.winterProgress]
+    for (const b of w.braziers) {
+      const lit = w.progress.includes(b.userData.index)
+      b.userData.lit = lit
+      b.userData.flame.visible = lit
+      b.userData.flame.material.emissiveIntensity = lit ? 1.4 : 0
+      b.userData.light.intensity = lit ? 2.5 : 0
+    }
+  }
+  if (data.winterSolved) {
+    w.solved = true
+    w.chest.visible = true
+    for (const ice of w.iceMeshes) {
+      ice.material.opacity = 0.25
+      ice.material.color.setHex(0x90caf9)
+    }
+  }
+  if (data.rareOpened?.winter) {
+    w.chest.userData.opened = true
+    w.chest.visible = true
+    w.chest.userData.lid.rotation.x = -1.1
+    w.solved = true
+  }
+
+  if (data.rareOpened?.cove) {
+    zones.underwater.chest.userData.opened = true
+    zones.underwater.chest.userData.lid.rotation.x = -1.1
   }
 }
 
@@ -515,34 +595,19 @@ export function tryZoneInteract(zones, player, activeId) {
     }
   }
 
-  // Underwater cave chest
+  // Cove shore chest (on land by the glowing ring)
   const u = zones.underwater
-  if (
-    !u.chest.userData.opened &&
-    (player.userData.diving || activeId === 'jinbe')
-  ) {
-    const cw = new THREE.Vector3()
-    u.chest.getWorldPosition(cw)
-    const reach = activeId === 'jinbe' ? 3.2 : 2.4
-    if (p.distanceTo(cw) < reach) {
-      // Non-Jinbe must be diving
-      if (activeId !== 'jinbe' && !player.userData.diving) {
-        return { handled: false }
-      }
-      u.chest.userData.opened = true
-      u.chest.userData.lid.rotation.x = -1.1
-      return {
-        handled: true,
-        message:
-          activeId === 'jinbe'
-            ? 'Fish-Man treasure! Jinbe claims the deep chest'
-            : 'Deep-sea chest! +15 Berry',
-        reward: {
-          berries: activeId === 'jinbe' ? 18 : 15,
-          bounty: 1_500_000,
-          rare: true,
-        },
-      }
+  if (!u.chest.userData.opened && p.distanceTo(u.chest.position) < 2.4) {
+    u.chest.userData.opened = true
+    u.chest.userData.lid.rotation.x = -1.1
+    return {
+      handled: true,
+      message: 'Cove treasure! +12 Berry',
+      reward: {
+        berries: 12,
+        bounty: 1_000_000,
+        rare: true,
+      },
     }
   }
 
@@ -629,19 +694,13 @@ export function updateAdventureZones(zones, {
     }
   }
 
-  // Underwater cave
+  // Cove shore chest hint
   const u = zones.underwater
   u.mouth.rotation.z = t * 0.4
   u.mouth.material.opacity = 0.55 + Math.sin(t * 2) * 0.15
-  const toCave = Math.hypot(p.x - u.center.x, p.z - u.center.z)
-  if (toCave < 10 && !u.chest.userData.opened) {
-    if (activeId === 'jinbe') {
-      hint = hint || 'Jinbe senses a cave below — dive or swim in (E near chest)'
-    } else if (player.userData.diving) {
-      hint = hint || 'Underwater cave — reach the glowing chest'
-    } else if (player.userData.swimming) {
-      hint = hint || 'Dive (Ctrl) into the glowing ring — Jinbe is strongest here'
-    }
+  const toShore = Math.hypot(p.x - u.shore.x, p.z - u.shore.z)
+  if (toShore < 8 && !u.chest.userData.opened) {
+    hint = hint || 'Cove chest on the beach — press E (glowing ring marks the spot)'
   }
 
   // Brazier proximity hint

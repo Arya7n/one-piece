@@ -53,9 +53,24 @@ export function createQuestSystem({ onUnlockBoss, onBossDefeated }) {
     get stage() {
       return stage
     },
+    get bossDefeated() {
+      return bossDefeated
+    },
     getQuestTarget(bossPos) {
       if (stage === 'boss' && bossPos) return { x: bossPos.x, z: bossPos.z }
       return null
+    },
+    /**
+     * Restore quest from save without re-firing unlock side-effects
+     * (caller applies world unlocks separately).
+     */
+    restore({ stage: st, chestsOpened = 0, bossUnlocked: bu, bossDefeated: bd } = {}) {
+      if (st === 'boss' || st === 'done' || st === 'chests') stage = st
+      bossUnlocked = !!bu || stage === 'boss' || stage === 'done'
+      bossDefeated = !!bd || stage === 'done'
+      if (bossDefeated) stage = 'done'
+      else if (bossUnlocked) stage = 'boss'
+      refresh(chestsOpened)
     },
     onChestOpened(chestsOpened) {
       refresh(chestsOpened)
@@ -69,7 +84,8 @@ export function createQuestSystem({ onUnlockBoss, onBossDefeated }) {
       return false
     },
     onBossDefeated() {
-      if (stage !== 'boss') return
+      if (stage !== 'boss' && stage !== 'done') return
+      if (bossDefeated) return
       bossDefeated = true
       stage = 'done'
       refresh()

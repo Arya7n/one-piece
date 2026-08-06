@@ -1,7 +1,7 @@
 /**
  * In-game user guide — what you can do in Grand Line Archipelago.
  */
-export function createUserGuide() {
+export function createUserGuide({ onResetProgress } = {}) {
   const btn = document.createElement('button')
   btn.type = 'button'
   btn.id = 'hud-guide'
@@ -101,7 +101,7 @@ export function createUserGuide() {
             <li><strong>Robin</strong> — bloom strikes</li>
             <li><strong>Franky</strong> — Radical Beam</li>
             <li><strong>Brook</strong> — soul slash</li>
-            <li><strong>Jinbe</strong> — strongest swimmer · underwater cave</li>
+            <li><strong>Jinbe</strong> — strongest swimmer · cove beach chest</li>
           </ul>
         </section>
 
@@ -157,12 +157,11 @@ export function createUserGuide() {
             <li>Step on glowing blue pads for <strong>updrafts</strong></li>
             <li>Chain pads to hop around the clouds</li>
           </ul>
-          <h3>Underwater cave</h3>
-          <p>Cyan ring in the water NE of the main island (~30, 18).</p>
+          <h3>Cove chest</h3>
+          <p>NE shore of the main island — look for the cyan ring.</p>
           <ul>
-            <li>Swim over · hold <kbd>Ctrl</kbd> / mobile <strong>⬇</strong> to dive in</li>
-            <li><kbd>E</kbd> the glowing chest</li>
-            <li><strong>Jinbe</strong> is best here (faster swim / easier claim)</li>
+            <li>Chest is on the <strong>beach</strong> (no diving)</li>
+            <li>Walk up and press <kbd>E</kbd></li>
           </ul>
         </section>
 
@@ -174,6 +173,12 @@ export function createUserGuide() {
             <li>If you go down, you respawn at the pier</li>
             <li>Dive air empties slowly — release <kbd>Ctrl</kbd> / <strong>⬇</strong> to recover</li>
           </ul>
+          <h3>Save progress</h3>
+          <ul>
+            <li>Progress saves automatically (chests, quest, bounty, berries, puzzles)</li>
+            <li>Reload the page anytime — you’ll pick up where you left off</li>
+            <li>Use <strong>Reset progress</strong> below to start fresh</li>
+          </ul>
           <h3>Exploration</h3>
           <ul>
             <li>Status line (top bar) hints when you’re near something</li>
@@ -181,6 +186,7 @@ export function createUserGuide() {
             <li>See the <strong>Mobile</strong> tab for the full touch layout</li>
           </ul>
           <p class="guide-note">Fan learning project — not affiliated with One Piece / Toei / Shueisha.</p>
+          <button type="button" id="guide-reset-progress" class="guide-reset-btn">Reset progress</button>
         </section>
       </div>
     </div>
@@ -218,6 +224,12 @@ export function createUserGuide() {
         p.classList.toggle('guide-panel-active', p.dataset.panel === id)
       })
     })
+  })
+
+  panel.querySelector('#guide-reset-progress')?.addEventListener('click', (e) => {
+    e.stopPropagation()
+    if (!confirm('Reset all saved progress and reload?')) return
+    onResetProgress?.()
   })
 
   window.addEventListener('keydown', (e) => {
