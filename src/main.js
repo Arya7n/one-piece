@@ -36,9 +36,15 @@ import {
 } from './systems.js'
 import { createQuestSystem } from './gameui.js'
 import { createOceanWater, sampleWaveHeight } from './water.js'
+import {
+  createAdventureZones,
+  tryZoneInteract,
+  updateAdventureZones,
+} from './zones.js'
 import { sfx } from './audio.js'
 import { createMobileGamepad } from './gamepad.js'
 import { createIntro, syncOrbitFromCamera } from './intro.js'
+import { createUserGuide } from './guide.js'
 
 const canvas = document.querySelector('#canvas')
 
@@ -223,6 +229,8 @@ const ocean = createOceanWater()
 scene.add(ocean.mesh)
 const sunDir = new THREE.Vector3()
 
+const adventureZones = createAdventureZones(scene)
+
 const weather = createWeatherSystem(scene)
 const dayNight = createDayNight({
   sun,
@@ -271,6 +279,7 @@ hudRoot.innerHTML = `
     <span id="hp-count-mini">HP: 100</span>
     <span id="dive-air-mini" hidden>Dive: 100%</span>
     <button type="button" id="hud-spectate" title="Spectator mode (P)">Spec</button>
+    <button type="button" id="hud-guide-slot" hidden aria-hidden="true"></button>
     <button type="button" id="hud-open" aria-expanded="false" aria-controls="hud-hint">Info</button>
     <em id="status-line"></em>
   </div>
@@ -279,7 +288,7 @@ hudRoot.innerHTML = `
       <strong>Grand Line Archipelago</strong>
       <button type="button" id="hud-close" aria-label="Close info">×</button>
     </div>
-    <span>WASD · Drag look · Pinch/Scroll zoom · Space jump · F attack · V aim · Ctrl dive · C call · E interact · H recall · P spectator</span>
+    <span>Open <b>Guide</b> for full controls, crew, quests &amp; adventure zones.</span>
     <em id="quest-hint-line">Quest: open 3 chests to unlock Boss Island</em>
     <em id="active-char-panel">Playing: Luffy</em>
     <div id="hud-stats">
@@ -291,9 +300,15 @@ hudRoot.innerHTML = `
       <span id="buff-count">Buff: —</span>
     </div>
     <div id="crew-strip"></div>
+    <button type="button" id="open-guide-from-info" class="guide-link-btn">Open full Guide</button>
   </div>
 `
 document.body.appendChild(hudRoot)
+
+const userGuide = createUserGuide()
+const guideSlot = hudRoot.querySelector('#hud-guide-slot')
+guideSlot.replaceWith(userGuide.btn)
+document.body.appendChild(userGuide.panel)
 
 const dayNightBtn = document.createElement('button')
 dayNightBtn.type = 'button'
@@ -394,6 +409,11 @@ hudCloseBtn.addEventListener('click', (e) => {
   e.stopPropagation()
   setHudOpen(false)
 })
+hudRoot.querySelector('#open-guide-from-info')?.addEventListener('click', (e) => {
+  e.stopPropagation()
+  setHudOpen(false)
+  userGuide.open()
+})
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !hint.hidden) {
     setHudOpen(false)
@@ -404,6 +424,7 @@ document.addEventListener(
   (e) => {
     if (hint.hidden) return
     if (hudRoot.contains(e.target)) return
+    if (userGuide.panel.contains(e.target)) return
     setHudOpen(false)
   },
   true,
@@ -922,6 +943,29 @@ function tryInteract() {
   }
   const player = getPlayer()
 
+  const zoneHit = tryZoneInteract(adventureZones, player, active)
+  if (zoneHit.handled) {
+    if (zoneHit.reward) {
+      berryCount += zoneHit.reward.berries || 0
+      if (zoneHit.reward.bounty) addBounty(zoneHit.reward.bounty, zoneHit.message)
+      else {
+        setStatus(zoneHit.message || '')
+        setTimeout(() => setStatus(''), 1600)
+      }
+      if (zoneHit.reward.rare) {
+        chestsOpened++
+        quest.onChestOpened(chestsOpened)
+      }
+      refreshStats()
+      sfx.chest()
+    } else {
+      sfx.switch()
+      setStatus(zoneHit.message || '')
+      setTimeout(() => setStatus(''), 1600)
+    }
+    return
+  }
+
   if (tryCook()) return
 
   for (const chest of chests) {
@@ -1385,11 +1429,28 @@ const pad = createMobileGamepad({
   onRun: (v) => {
     padRun = v
   },
+  onDive: (v) => {
+    keys.control = !!v
+  },
 })
 
 // Input
 window.addEventListener('keydown', (e) => {
   if (intro?.isActive) return
+  if (userGuide.isOpen()) {
+    if (e.key === 'Escape') return
+    // Let typing/navigation in guide alone; don't fire game actions
+    if (e.key !== 'Escape') {
+      const block =
+        e.code === 'Space' ||
+        e.code.startsWith('Key') ||
+        e.code.startsWith('Digit') ||
+        e.code === 'BracketLeft' ||
+        e.code === 'BracketRight'
+      if (block) e.preventDefault()
+    }
+    return
+  }
 
   const isCtrl =
     e.ctrlKey ||
@@ -1663,7 +1724,7 @@ function updateSpectator(delta) {
   spectateFocus.z += spectateVel.z * delta
 
   if (keys.space) spectateFocus.y += maxSpeed * 0.7 * delta
-  if (keys.control) spectateFocus.y -= maxSpeed * 0.7 * delta
+  if (keys.control || pad.state.dive) spectateFocus.y -= maxSpeed * 0.7 * delta
 
   // Soft world bounds
   const r = Math.hypot(spectateFocus.x, spectateFocus.z)
@@ -1794,10 +1855,32 @@ function updatePlayer(delta, t) {
   if (active === 'luffy' && characters.luffy.userData.gear5) base *= 1.35
   if (fruitBuff?.buff === 'speed') base *= 1.45
   if (swimming) {
-    // Devil fruit weakness — except Jinbe
-    base *= active === 'jinbe' ? 0.7 : fruitBuff ? 0.25 : 0.55
+    // Devil fruit weakness — except Jinbe; cave bonus for Jinbe
+    let swimMul = active === 'jinbe' ? 0.7 : fruitBuff ? 0.25 : 0.55
+    const uc = adventureZones.underwater.center
+    if (
+      active === 'jinbe' &&
+      Math.hypot(player.position.x - uc.x, player.position.z - uc.z) < 12
+    ) {
+      swimMul *= 1.35
+    }
+    base *= swimMul
   }
+
+  const zoneFx = updateAdventureZones(adventureZones, {
+    player,
+    playerVel,
+    delta,
+    t,
+    activeId: active,
+    onGround: !!player.userData.onGround,
+  })
+  if (zoneFx.hint && !statusLine.textContent) {
+    setStatus(zoneFx.hint)
+  }
+
   const maxSpeed = running ? base * 2.1 : base
+  const iceAccel = zoneFx.iceAccel ?? 1
 
   const busy =
     (player.userData.punchT ?? -1) >= 0 ||
@@ -1808,7 +1891,7 @@ function updatePlayer(delta, t) {
 
   if (moving && !busy && !player.userData.climbing) {
     moveDir.normalize()
-    const accel = running ? 28 : 18
+    const accel = (running ? 28 : 18) * iceAccel
     playerVel.x += moveDir.x * accel * delta
     playerVel.z += moveDir.z * accel * delta
     const targetYaw = Math.atan2(moveDir.x, moveDir.z)
@@ -1819,7 +1902,11 @@ function updatePlayer(delta, t) {
     moveFacing += shortestAngle(moveFacing, targetYaw) * (1 - Math.exp(-12 * delta))
     player.rotation.y = moveFacing
   } else {
-    const damp = swimming ? 4.5 : 10
+    const damp = swimming
+      ? 4.5
+      : zoneFx.iceDamp != null
+        ? zoneFx.iceDamp
+        : 10
     playerVel.x *= Math.exp(-damp * delta)
     playerVel.z *= Math.exp(-damp * delta)
   }
@@ -1841,7 +1928,15 @@ function updatePlayer(delta, t) {
 
   // Jump physics
   const wasSwim = player.userData.swimming
-  if (!player.userData.climbing) {
+  if (adventureZones.desert.inside) {
+    // Underground chamber — skip ocean/terrain snap
+    player.userData.swimming = false
+    player.userData.diving = false
+    player.userData.onGround = true
+    player.userData.velY = 0
+    if (player.position.y > -5) player.position.y = adventureZones.desert.spawn.y
+    refreshDiveHud()
+  } else if (!player.userData.climbing) {
     if (!player.userData.onGround) {
       player.userData.velY -= GRAVITY * delta
       player.position.y += player.userData.velY * delta
@@ -1858,13 +1953,16 @@ function updatePlayer(delta, t) {
       // Start dive needs air; once underwater, stay down until Ctrl release or 0%
       // (old diveAir > 0.12 check caused surface↔dive flicker near empty)
       const startDive =
-        keys.control &&
+        (keys.control || pad.state.dive) &&
         !!player.userData.swimming &&
         !player.userData.diving &&
         !diveExhausted &&
         diveAir >= 0.25
       const keepDive =
-        !!player.userData.diving && keys.control && diveAir > 0 && !diveExhausted
+        !!player.userData.diving &&
+        (keys.control || pad.state.dive) &&
+        diveAir > 0 &&
+        !diveExhausted
       const wantDive = startDive || keepDive
       applyTerrainOrSwim(player, { diving: wantDive })
       if (player.userData.swimming && !wasSwim) sfx.splash()
@@ -1878,17 +1976,17 @@ function updatePlayer(delta, t) {
           player.userData.diving = false
           applyTerrainOrSwim(player)
           refreshDiveHud()
-          setStatus('Out of breath! Release Ctrl and recover')
+          setStatus('Out of breath! Release dive and recover')
           setTimeout(() => {
             if (statusLine.textContent.startsWith('Out of breath')) setStatus('')
           }, 1600)
         }
       } else if (player.userData.swimming) {
         diveAir = Math.min(1, diveAir + delta * 0.22)
-        if (!keys.control && diveAir >= 0.35) diveExhausted = false
+        if (!(keys.control || pad.state.dive) && diveAir >= 0.35) diveExhausted = false
       } else {
         diveAir = 1
-        if (!keys.control) diveExhausted = false
+        if (!(keys.control || pad.state.dive)) diveExhausted = false
       }
       refreshDiveHud()
     }
@@ -2273,7 +2371,7 @@ function animate() {
     updatePellet(delta)
 
     const player = getPlayer()
-    const showHints = !player.userData.diving && !keys.control
+    const showHints = !player.userData.diving && !(keys.control || pad.state.dive)
 
     if (showHints && nearShip(player)) {
       if (!boardHintShown) {

@@ -11,6 +11,10 @@ Built with Vite: Gear 5 stretch attacks, sword-slash VFX, collectibles, and a bo
 - Play as the full **Straw Hat crew** (Luffy → Jinbe) — switch anytime; others idle on their own islands
 - **Call crew (C)** gathers everyone to you; board Merry with whoever is nearby
 - Large archipelago with **desert, winter, and sky** themed islands
+- **Desert ruins dungeon** — rune order puzzle + rare chest
+- **Winter ice physics** — slippery ice + brazier lighting puzzle
+- **Sky island wind pads** — step on for updrafts
+- **Underwater cave** — dive for a rare chest (Jinbe has an edge)
 - Swim, **dive (Ctrl)**, jump, climb, sail **Going Merry**
 - **Ship cannons** (F while sailing) + night **lanterns**
 - **Day / night cycle**
@@ -37,18 +41,20 @@ Built with Vite: Gear 5 stretch attacks, sword-slash VFX, collectibles, and a bo
 | `Ctrl` | Dive underwater (while swimming) |
 | `C` | Call all crew to you |
 | `G` | Toggle Gear 5 (Luffy) |
-| `E` | Board / cook / chests / meat |
+| `E` | Board / cook / chests / ruins / braziers / cave |
 | `H` | Recall Going Merry to the pier |
 | `1`–`0` | Switch crew member |
 | `[` `]` or `Q` `.` | Cycle crew |
 | Hold `W` near tower/flag | Climb |
 | `B` | Toggle bloom / color grading |
 | `P` / Spec | Spectator free-cam (no character control) |
+| Guide button | Full in-game user guide |
 | Drag | Orbit camera |
 
 **Spectator:** WASD fly, Space/Ctrl up-down, drag/pinch look-zoom, `[` `]` watch a crewmate, number keys or Spec again to return to play.
 
-On touch / narrow screens a virtual stick + buttons appear (A attack, J jump, E interact, G Gear 5, R run, ⇄ cycle, 👁 spectator).
+On touch / narrow screens a virtual stick + buttons appear:
+**stick** move, **A** attack, **E** interact, **J** jump, **⬇ hold** dive, **R** run, **G** Gear 5, **⇄** cycle, **📣** call, **👁** spectator.
 
 ## Getting started
 
