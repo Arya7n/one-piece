@@ -1,7 +1,7 @@
 /**
  * In-game user guide — what you can do in Grand Line Archipelago.
  */
-export function createUserGuide({ onResetProgress } = {}) {
+export function createUserGuide({ onResetProgress, onInstallApp } = {}) {
   const btn = document.createElement('button')
   btn.type = 'button'
   btn.id = 'hud-guide'
@@ -28,6 +28,7 @@ export function createUserGuide({ onResetProgress } = {}) {
         <button type="button" class="guide-tab" data-tab="ship">Ship</button>
         <button type="button" class="guide-tab" data-tab="quests">Quests</button>
         <button type="button" class="guide-tab" data-tab="zones">Zones</button>
+        <button type="button" class="guide-tab" data-tab="install">Install</button>
         <button type="button" class="guide-tab" data-tab="tips">Tips</button>
       </nav>
       <div class="guide-body">
@@ -45,7 +46,7 @@ export function createUserGuide({ onResetProgress } = {}) {
           <ul>
             <li><kbd>F</kbd> — attack (or fire ship cannons)</li>
             <li><kbd>E</kbd> — interact (chests, cook, board, puzzles)</li>
-            <li><kbd>Ctrl</kbd> — dive while swimming (watch your air)</li>
+            <li><kbd>X</kbd> — dive while swimming (watch your air)</li>
             <li><kbd>V</kbd> / right-click — Usopp sniper aim</li>
             <li><kbd>G</kbd> — Gear 5 (as Luffy)</li>
             <li><kbd>P</kbd> / Spec — spectator free-cam</li>
@@ -61,7 +62,7 @@ export function createUserGuide({ onResetProgress } = {}) {
             <li><strong>A</strong> — attack / fire cannons</li>
             <li><strong>E</strong> — interact (chests, cook, board, ruins, braziers)</li>
             <li><strong>J</strong> — jump · tap again underwater to surface</li>
-            <li><strong>⬇ Dive</strong> — <em>hold</em> while swimming to dive (same as Ctrl)</li>
+            <li><strong>⬇ Dive</strong> — <em>hold</em> while swimming to dive (same as <kbd>X</kbd>)</li>
             <li><strong>R</strong> — hold to run</li>
             <li><strong>G</strong> — Gear 5 (Luffy)</li>
             <li><strong>⇄</strong> — next crewmate</li>
@@ -78,6 +79,7 @@ export function createUserGuide({ onResetProgress } = {}) {
           <ul>
             <li>Hold <strong>⬇</strong> to stay underwater; release to surface / recover air</li>
             <li>In spectator: stick flies · J up · E (or ⬇) down</li>
+            <li><strong>Add to Home Screen</strong> (Install tab) for a full-screen app</li>
             <li>Open <strong>Guide</strong> anytime if you forget a button</li>
           </ul>
         </section>
@@ -87,20 +89,19 @@ export function createUserGuide({ onResetProgress } = {}) {
           <ul>
             <li><kbd>1</kbd>–<kbd>0</kbd> — pick a Straw Hat</li>
             <li><kbd>[</kbd> <kbd>]</kbd> or <kbd>Q</kbd> <kbd>.</kbd> — cycle crew</li>
-            <li>Tap a name chip in Info — same thing</li>
-            <li><kbd>C</kbd> — call everyone to you</li>
+            <li><kbd>C</kbd> — call all crew to you</li>
           </ul>
-          <h3>Who does what</h3>
+          <h3>Who’s who</h3>
           <ul>
-            <li><strong>Luffy</strong> — rubber punches · Gear 5</li>
-            <li><strong>Zoro</strong> — sword slashes (sometimes gets lost)</li>
-            <li><strong>Nami</strong> — Clima-Tact rain &amp; lightning</li>
-            <li><strong>Usopp</strong> — pellets · sniper zoom</li>
-            <li><strong>Sanji</strong> — kicks · best at the cook station</li>
-            <li><strong>Chopper</strong> — heavy kicks</li>
-            <li><strong>Robin</strong> — bloom strikes</li>
-            <li><strong>Franky</strong> — Radical Beam</li>
-            <li><strong>Brook</strong> — soul slash</li>
+            <li><strong>Luffy</strong> — stretch punches · Gear 5</li>
+            <li><strong>Zoro</strong> — multi-slash swordsman</li>
+            <li><strong>Nami</strong> — rain &amp; lightning</li>
+            <li><strong>Usopp</strong> — sniper zoom (<kbd>V</kbd>)</li>
+            <li><strong>Sanji</strong> — kicks · cook station heals</li>
+            <li><strong>Chopper</strong> — compact · good jumper</li>
+            <li><strong>Robin</strong> — reach &amp; crowd control</li>
+            <li><strong>Franky</strong> — heavy hits · tanky</li>
+            <li><strong>Brook</strong> — fast · soulful strikes</li>
             <li><strong>Jinbe</strong> — strongest swimmer · cove beach chest</li>
           </ul>
         </section>
@@ -108,44 +109,31 @@ export function createUserGuide({ onResetProgress } = {}) {
         <section class="guide-panel" data-panel="ship">
           <h3>Going Merry</h3>
           <ul>
-            <li>Walk near the pier ship · <kbd>E</kbd> to board</li>
-            <li><kbd>WASD</kbd> — sail &amp; steer</li>
-            <li><kbd>F</kbd> — fire side cannons</li>
-            <li><kbd>E</kbd> again — leave the ship</li>
+            <li>Walk onto the deck · <kbd>E</kbd> to board / leave</li>
+            <li><kbd>WASD</kbd> — sail while aboard</li>
+            <li><kbd>F</kbd> — fire cannons</li>
             <li><kbd>H</kbd> — recall Merry to the pier (from shore)</li>
-            <li><kbd>C</kbd> first if you want the whole crew aboard</li>
           </ul>
         </section>
 
         <section class="guide-panel" data-panel="quests">
           <h3>Main quest</h3>
-          <ol>
-            <li>Open <strong>3 treasure chests</strong> around the islands</li>
-            <li>Boss Island unlocks in the <strong>southwest</strong></li>
-            <li>Sail there and defeat <strong>Kaido</strong></li>
-          </ol>
-          <h3>Collectibles</h3>
           <ul>
-            <li><strong>Berries</strong> — gold coins (respawn)</li>
-            <li><strong>Chests</strong> — <kbd>E</kbd> to open</li>
-            <li><strong>Barrels</strong> — smash with attacks</li>
-            <li><strong>Meat</strong> — heal HP</li>
-            <li><strong>Devil Fruits</strong> — temporary buffs (weak in water)</li>
-            <li><strong>Cook station</strong> — spend Berries for big heals (Sanji is better)</li>
+            <li>Open <strong>3 chests</strong> to unlock Boss Island</li>
+            <li>Defeat <strong>Kaido</strong> for the big bounty bump</li>
           </ul>
           <p class="guide-note">Quest progress also shows in the Info panel.</p>
         </section>
 
         <section class="guide-panel" data-panel="zones">
           <h3>Desert ruins</h3>
-          <p>West desert island — glowing stone arch.</p>
+          <p>West desert island — step on the entrance pad.</p>
           <ul>
-            <li><kbd>E</kbd> at the arch to enter</li>
-            <li>Light <strong>3 runes in order</strong> (<kbd>E</kbd>)</li>
-            <li>Wrong order resets — claim the rare chest, then green pad to exit</li>
+            <li>Press runes in the glowing order</li>
+            <li>Claim the rare chest · green pad exits</li>
           </ul>
-          <h3>Winter ice</h3>
-          <p>North winter island — slippery ice sheets.</p>
+          <h3>Winter braziers</h3>
+          <p>North winter island — ice is slippery.</p>
           <ul>
             <li>Short steps — ice makes you slide</li>
             <li>Light <strong>3 braziers in order</strong> (<kbd>E</kbd>)</li>
@@ -165,13 +153,28 @@ export function createUserGuide({ onResetProgress } = {}) {
           </ul>
         </section>
 
+        <section class="guide-panel" data-panel="install">
+          <h3>Install as an app</h3>
+          <p>Browser tabs steal keys (Ctrl shortcuts, refresh, zoom). Install once on desktop or phone and play fullscreen like a normal app.</p>
+          <ul>
+            <li><strong>Chrome / Edge (desktop)</strong> — address-bar install icon, or the button below when it appears</li>
+            <li><strong>Android Chrome</strong> — menu → <em>Install app</em> / <em>Add to Home screen</em></li>
+            <li><strong>iPhone / iPad Safari</strong> — Share → <em>Add to Home Screen</em></li>
+          </ul>
+          <p class="guide-note">Same save data as the browser tab. Load once online; later visits can work offline.</p>
+          <button type="button" id="guide-install-app" class="guide-install-btn" hidden>
+            Install Grand Line
+          </button>
+          <p id="guide-install-status" class="guide-note"></p>
+        </section>
+
         <section class="guide-panel" data-panel="tips">
           <h3>Combat &amp; survival</h3>
           <ul>
             <li>Kaido telegraphs swings and breath — keep moving</li>
             <li>Under ~45% HP he enters a rage phase</li>
             <li>If you go down, you respawn at the pier</li>
-            <li>Dive air empties slowly — release <kbd>Ctrl</kbd> / <strong>⬇</strong> to recover</li>
+            <li>Dive air empties slowly — release <kbd>X</kbd> / <strong>⬇</strong> to recover</li>
           </ul>
           <h3>Save progress</h3>
           <ul>
@@ -191,6 +194,20 @@ export function createUserGuide({ onResetProgress } = {}) {
       </div>
     </div>
   `
+
+  const installBtn = panel.querySelector('#guide-install-app')
+  const installStatus = panel.querySelector('#guide-install-status')
+
+  function setInstallAvailable(available) {
+    if (!installBtn) return
+    installBtn.hidden = !available
+    if (installStatus) {
+      installStatus.textContent = available
+        ? 'Your browser can install this game now.'
+        : 'If the button is hidden: use your browser’s Install / Add to Home Screen menu (see above).'
+    }
+  }
+  setInstallAvailable(false)
 
   function setOpen(open) {
     panel.hidden = !open
@@ -232,6 +249,22 @@ export function createUserGuide({ onResetProgress } = {}) {
     onResetProgress?.()
   })
 
+  installBtn?.addEventListener('click', async (e) => {
+    e.stopPropagation()
+    const result = await onInstallApp?.()
+    if (result?.ok) {
+      if (installStatus) {
+        installStatus.textContent = 'Installed — open it from your home screen / apps list.'
+      }
+      setInstallAvailable(false)
+    } else if (result?.reason === 'dismissed') {
+      if (installStatus) installStatus.textContent = 'Install canceled — you can try again anytime.'
+    } else if (installStatus) {
+      installStatus.textContent =
+        'Install prompt not available here. Use your browser menu: Install app / Add to Home Screen.'
+    }
+  })
+
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !panel.hidden) {
       setOpen(false)
@@ -244,5 +277,6 @@ export function createUserGuide({ onResetProgress } = {}) {
     open: () => setOpen(true),
     close: () => setOpen(false),
     isOpen: () => !panel.hidden,
+    setInstallAvailable,
   }
 }

@@ -48,6 +48,7 @@ import { createMobileGamepad } from './gamepad.js'
 import { createIntro, syncOrbitFromCamera } from './intro.js'
 import { createUserGuide } from './guide.js'
 import { loadProgress, saveProgress, clearProgress } from './save.js'
+import { initPwaInstall, onInstallStateChange, promptInstall, isStandalone } from './pwa.js'
 
 const canvas = document.querySelector('#canvas')
 
@@ -81,7 +82,7 @@ let padRun = false
 let gathering = false
 let aiming = false
 let diveAir = 1
-/** After air runs out, block re-dive until Ctrl is released and air recovers */
+/** After air runs out, block re-dive until dive key is released and air recovers */
 let diveExhausted = false
 let crewBounty = 30_000_000
 /** Crew ids currently attached to the ship */
@@ -313,10 +314,18 @@ const userGuide = createUserGuide({
     clearProgress()
     window.location.reload()
   },
+  onInstallApp: () => promptInstall(),
 })
 const guideSlot = hudRoot.querySelector('#hud-guide-slot')
 guideSlot.replaceWith(userGuide.btn)
 document.body.appendChild(userGuide.panel)
+
+initPwaInstall()
+if (isStandalone()) document.documentElement.classList.add('pwa-standalone')
+onInstallStateChange(({ canInstall, isStandalone: standalone }) => {
+  document.documentElement.classList.toggle('pwa-standalone', standalone)
+  userGuide.setInstallAvailable?.(canInstall && !standalone)
+})
 
 const dayNightBtn = document.createElement('button')
 dayNightBtn.type = 'button'
@@ -1534,38 +1543,32 @@ window.addEventListener('keydown', (e) => {
     return
   }
 
-  const isCtrl =
-    e.ctrlKey ||
-    e.metaKey ||
-    e.code === 'ControlLeft' ||
-    e.code === 'ControlRight' ||
-    e.code === 'MetaLeft' ||
-    e.code === 'MetaRight'
+  // Dive uses X (not Ctrl) so browser shortcuts stay out of the way
+  if (e.code === 'KeyX') {
+    e.preventDefault()
+    keys.control = true
+    sfx.unlock()
+    return
+  }
 
-  // Block browser shortcuts (zoom, bookmarks, find, refresh…) so they don't fight the game UI
-  if (isCtrl) e.preventDefault()
+  // Soft-block common browser chords while playing (still safer in installed PWA)
+  if (e.ctrlKey || e.metaKey) {
+    e.preventDefault()
+    return
+  }
 
   sfx.unlock()
 
-  // Movement / dive flags — allow WASD while diving with Ctrl held
-  if (e.code === 'ControlLeft' || e.code === 'ControlRight') {
-    keys.control = true
-    return
-  }
   if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys.shift = true
   if (e.code === 'Space') keys.space = true
 
   const k = e.key.toLowerCase()
   if (k === 'control' || k === 'meta' || k === 'alt') return
 
-  // Always track move keys, even during Ctrl-dive
+  // Always track move keys, even while holding dive (X)
   if (k === 'w' || k === 'a' || k === 's' || k === 'd' || k === 'v') {
     keys[k] = true
   }
-
-  // Block Ctrl/Cmd chords from firing game actions (bloom, crew switch, etc.)
-  // that were making the HUD/scene flicker
-  if (e.ctrlKey || e.metaKey) return
 
   if (e.repeat) return
 
@@ -1620,16 +1623,15 @@ window.addEventListener('keydown', (e) => {
   }
 })
 window.addEventListener('keyup', (e) => {
-  if (e.ctrlKey || e.metaKey) e.preventDefault()
-  const k = e.key.toLowerCase()
-  if (k === 'control' || k === 'meta') {
+  if (e.code === 'KeyX') {
     keys.control = false
     return
   }
+  if (e.ctrlKey || e.metaKey) e.preventDefault()
+  const k = e.key.toLowerCase()
   if (k in keys) keys[k] = false
   if (e.code === 'Space') keys.space = false
   if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys.shift = false
-  if (e.code === 'ControlLeft' || e.code === 'ControlRight') keys.control = false
 })
 // Stop Ctrl+wheel browser zoom from resizing the page and breaking the HUD
 window.addEventListener(
@@ -2032,7 +2034,7 @@ function updatePlayer(delta, t) {
         if (player.userData.swimming && !wasSwim) sfx.splash()
       }
     } else {
-      // Start dive needs air; once underwater, stay down until Ctrl release or 0%
+      // Start dive needs air; once underwater, stay down until X / pad release or 0%
       // (old diveAir > 0.12 check caused surface↔dive flicker near empty)
       const startDive =
         (keys.control || pad.state.dive) &&

@@ -9,10 +9,20 @@ body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #7ec8e8;
+  background: #0a1628;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Installed PWA / iOS home-screen — keep HUD clear of notches */
+html.pwa-standalone body,
+html.pwa-standalone #hud-root {
+  padding-top: env(safe-area-inset-top, 0);
+  padding-left: env(safe-area-inset-left, 0);
+  padding-right: env(safe-area-inset-right, 0);
+  padding-bottom: env(safe-area-inset-bottom, 0);
 }
 
 #canvas {
@@ -737,6 +747,26 @@ body.spectating #hud-spectate {
 
 .guide-reset-btn:hover {
   background: #e53935;
+}
+
+.guide-install-btn {
+  margin-top: 12px;
+  font: 700 12px/1 'Trebuchet MS', 'Segoe UI', sans-serif;
+  padding: 10px 14px;
+  border: 2px solid #1a1a1a;
+  border-radius: 10px;
+  background: #1565c0;
+  color: #e3f2fd;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 #1a1a1a;
+}
+
+.guide-install-btn:hover {
+  background: #1e88e5;
+}
+
+.guide-install-btn[hidden] {
+  display: none;
 }
 
 body.guide-open #mobile-pad {

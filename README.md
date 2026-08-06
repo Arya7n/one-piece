@@ -14,8 +14,8 @@ Built with Vite: Gear 5 stretch attacks, sword-slash VFX, collectibles, and a bo
 - **Desert ruins dungeon** — rune order puzzle + rare chest
 - **Winter ice physics** — slippery ice + brazier lighting puzzle
 - **Sky island wind pads** — step on for updrafts
-- **Underwater cave** — dive for a rare chest (Jinbe has an edge)
-- Swim, **dive (Ctrl)**, jump, climb, sail **Going Merry**
+- Cove shore rare chest (no diving required)
+- Swim, **dive (X)**, jump, climb, sail **Going Merry**
 - **Ship cannons** (F while sailing) + night **lanterns**
 - **Day / night cycle**
 - Nami **rain & lightning** attack; Usopp **sniper zoom (V / RMB)**
@@ -23,6 +23,7 @@ Built with Vite: Gear 5 stretch attacks, sword-slash VFX, collectibles, and a bo
 - Rising **wanted bounty** poster; berries & barrels **respawn**
 - **Quest beats** (3 chests → unlock Boss Island → defeat Kaido)
 - **Progress saves** automatically (chests, quest, bounty, puzzles)
+- **Installable PWA** — add to desktop / home screen (web + mobile)
 - **Third-person follow camera** (drag to look, scroll to zoom)
 - Gear 5, unique attacks, Devil Fruits, chests, meat HP
 - Zoro occasionally wanders off on his own
@@ -39,7 +40,7 @@ Built with Vite: Gear 5 stretch attacks, sword-slash VFX, collectibles, and a bo
 | `Space` | Jump / leap off climb |
 | `F` | Attack / fire ship cannons |
 | `V` / RMB | Usopp sniper aim (hold) |
-| `Ctrl` | Dive underwater (while swimming) |
+| `X` | Dive underwater (while swimming) |
 | `C` | Call all crew to you |
 | `G` | Toggle Gear 5 (Luffy) |
 | `E` | Board / cook / chests / ruins / braziers / cave |
@@ -52,10 +53,27 @@ Built with Vite: Gear 5 stretch attacks, sword-slash VFX, collectibles, and a bo
 | Guide button | Full in-game user guide |
 | Drag | Orbit camera |
 
-**Spectator:** WASD fly, Space/Ctrl up-down, drag/pinch look-zoom, `[` `]` watch a crewmate, number keys or Spec again to return to play.
+**Spectator:** WASD fly, Space/X up-down, drag/pinch look-zoom, `[` `]` watch a crewmate, number keys or Spec again to return to play.
 
 On touch / narrow screens a virtual stick + buttons appear:
 **stick** move, **A** attack, **E** interact, **J** jump, **⬇ hold** dive, **R** run, **G** Gear 5, **⇄** cycle, **📣** call, **👁** spectator.
+
+## Install as an app (PWA)
+
+This is a Progressive Web App — same game, installable on desktop and phones.
+
+```bash
+npm run build
+npm run preview   # must be HTTPS or localhost for install
+```
+
+Then:
+
+- **Desktop Chrome/Edge** — install icon in the address bar, or Guide → Install
+- **Android** — browser menu → Install app / Add to Home screen
+- **iPhone/iPad** — Safari Share → Add to Home Screen
+
+Installed mode is fullscreen (fewer browser shortcut fights) and keeps your local save.
 
 ## Getting started
 
@@ -67,14 +85,14 @@ npm run dev
 Open the local URL Vite prints (usually `http://localhost:5173`).
 
 ```bash
-npm run build    # production build
-npm run preview  # preview the build
+npm run build    # production build (+ service worker)
+npm run preview  # preview the build / test install
 ```
 
 ## Tech stack
 
 - [Three.js](https://threejs.org/)
-- [Vite](https://vite.dev/)
+- [Vite](https://vite.dev/) + [vite-plugin-pwa](https://vite-pwa-org.netlify.app/)
 
 ## Project structure
 
@@ -87,6 +105,8 @@ src/
   gamepad.js      # mobile + physical gamepad
   systems.js      # weather, day/night, bubbles, bounty, cook
   gameui.js       # quest tracker
+  save.js         # localStorage progress
+  pwa.js          # install prompt helpers
   style.css       # HUD + touch pad styles
 ```
 
