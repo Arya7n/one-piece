@@ -126,13 +126,21 @@ export function applyTerrainOrSwim(obj, opts = {}) {
     obj.userData.swimming = false
     obj.userData.diving = false
   } else if (opts.diving) {
-    // Brief underwater dive
+    // Brief underwater dive — ease depth so surfacing doesn't pop the camera
     const diveY = WATER_SURFACE - 2.1
-    obj.position.y = diveY
+    const cur = obj.position.y
+    obj.position.y = cur + (diveY - cur) * 0.22
     obj.userData.swimming = true
     obj.userData.diving = true
   } else {
-    obj.position.y = WATER_SURFACE - 0.72
+    const swimY = WATER_SURFACE - 0.72
+    if (obj.userData.diving) {
+      // Was diving — ease up to surface
+      obj.position.y += (swimY - obj.position.y) * 0.28
+      if (Math.abs(obj.position.y - swimY) < 0.08) obj.position.y = swimY
+    } else {
+      obj.position.y = swimY
+    }
     obj.userData.swimming = true
     obj.userData.diving = false
   }
@@ -947,40 +955,167 @@ export function buildWorld(scene) {
   scene.add(bossBarrier)
 
   const seaKing = new THREE.Group()
-  seaKing.name = 'SeaKing'
-  const body = new THREE.Mesh(
-    new THREE.SphereGeometry(2.4, 16, 12),
-    new THREE.MeshStandardMaterial({ color: 0x1b5e20, roughness: 0.7 }),
-  )
-  body.scale.set(1.2, 0.85, 1.6)
-  body.position.y = 2.2
-  body.castShadow = true
-  seaKing.add(body)
-  const head = new THREE.Mesh(
-    new THREE.SphereGeometry(1.3, 12, 10),
-    new THREE.MeshStandardMaterial({ color: 0x2e7d32 }),
-  )
-  head.position.set(0, 3.2, -2.2)
+  seaKing.name = 'KaidoBoss'
+  const kaidoSkin = new THREE.MeshStandardMaterial({
+    color: 0x6b7dd6,
+    roughness: 0.62,
+    metalness: 0.08,
+    emissive: 0x121633,
+    emissiveIntensity: 0.18,
+  })
+  const kaidoFur = new THREE.MeshStandardMaterial({
+    color: 0x1b2c7a,
+    roughness: 0.95,
+  })
+  const kaidoHair = new THREE.MeshStandardMaterial({
+    color: 0x0e214f,
+    roughness: 0.82,
+  })
+  const kaidoGold = new THREE.MeshStandardMaterial({
+    color: 0xfbc02d,
+    metalness: 0.65,
+    roughness: 0.28,
+  })
+  const kaidoClubMat = new THREE.MeshStandardMaterial({
+    color: 0x2e3138,
+    metalness: 0.42,
+    roughness: 0.45,
+  })
+
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(1.35, 2.7, 8, 14), kaidoSkin)
+  torso.position.y = 4.2
+  torso.castShadow = true
+  seaKing.add(torso)
+
+  const chest = new THREE.Mesh(new THREE.SphereGeometry(1.55, 18, 14), kaidoFur)
+  chest.scale.set(1.05, 0.88, 0.95)
+  chest.position.set(0, 4.25, 0.42)
+  seaKing.add(chest)
+
+  const belt = new THREE.Mesh(new THREE.TorusGeometry(1.15, 0.13, 10, 24), kaidoGold)
+  belt.rotation.x = Math.PI / 2
+  belt.position.set(0, 2.85, 0)
+  seaKing.add(belt)
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(1.12, 16, 14), kaidoSkin)
+  head.position.set(0, 6.35, -0.18)
+  head.castShadow = true
   seaKing.add(head)
+
+  const beard = new THREE.Mesh(new THREE.ConeGeometry(0.46, 1.2, 8), kaidoHair)
+  beard.position.set(0, 5.55, 0.38)
+  beard.rotation.x = Math.PI
+  seaKing.add(beard)
+
+  const moustache = new THREE.Group()
   for (const side of [-1, 1]) {
+    const whisker = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.04, 2.1, 6), kaidoHair)
+    whisker.position.set(side * 0.9, 5.95, -0.1)
+    whisker.rotation.z = side * (Math.PI / 2.8)
+    whisker.rotation.x = 0.35
+    moustache.add(whisker)
+  }
+  seaKing.add(moustache)
+
+  const mane = new THREE.Group()
+  for (const side of [-1, 1]) {
+    const strand = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.34, 3.4, 7), kaidoHair)
+    strand.position.set(side * 1.1, 4.95, 0.8)
+    strand.rotation.z = side * 0.24
+    mane.add(strand)
+  }
+  seaKing.add(mane)
+
+  for (const side of [-1, 1]) {
+    const horn = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.26, 2.7, 8), kaidoGold)
+    horn.position.set(side * 0.72, 7.45, -0.08)
+    horn.rotation.z = side * 0.78
+    horn.rotation.x = -0.28
+    seaKing.add(horn)
+
     const eye = new THREE.Mesh(
-      new THREE.SphereGeometry(0.22, 8, 8),
+      new THREE.SphereGeometry(0.12, 8, 8),
       new THREE.MeshStandardMaterial({
-        color: 0xffeb3b,
-        emissive: 0xffc107,
-        emissiveIntensity: 0.5,
+        color: 0xff7043,
+        emissive: 0xff3d00,
+        emissiveIntensity: 0.9,
       }),
     )
-    eye.position.set(side * 0.45, 3.4, -3.1)
+    eye.position.set(side * 0.35, 6.42, -1)
     seaKing.add(eye)
   }
+
+  const shoulderL = new THREE.Mesh(new THREE.SphereGeometry(0.7, 12, 10), kaidoSkin)
+  shoulderL.position.set(-1.7, 5.05, 0)
+  const shoulderR = shoulderL.clone()
+  shoulderR.position.x = 1.7
+  seaKing.add(shoulderL, shoulderR)
+
+  const armL = new THREE.Group()
+  armL.position.set(-1.75, 4.95, 0)
+  const armUpperL = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.36, 1.8, 8), kaidoSkin)
+  armUpperL.position.y = -0.8
+  const armLowerL = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.28, 1.55, 8), kaidoSkin)
+  armLowerL.position.set(0, -2.2, 0)
+  const handL = new THREE.Mesh(new THREE.SphereGeometry(0.3, 10, 8), kaidoSkin)
+  handL.position.set(0, -3.1, 0)
+  armL.add(armUpperL, armLowerL, handL)
+  seaKing.add(armL)
+
+  const armR = new THREE.Group()
+  armR.position.set(1.75, 4.95, 0)
+  const armUpperR = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.36, 1.8, 8), kaidoSkin)
+  armUpperR.position.y = -0.8
+  const armLowerR = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.28, 1.55, 8), kaidoSkin)
+  armLowerR.position.set(0, -2.2, 0)
+  const handR = new THREE.Mesh(new THREE.SphereGeometry(0.32, 10, 8), kaidoSkin)
+  handR.position.set(0, -3.05, 0)
+  armR.add(armUpperR, armLowerR, handR)
+
+  const club = new THREE.Group()
+  club.position.set(0, -2.55, -0.05)
+  const clubBody = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.28, 3.6, 10), kaidoClubMat)
+  clubBody.rotation.z = Math.PI / 2
+  const clubGrip = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.9, 8), kaidoGold)
+  clubGrip.rotation.z = Math.PI / 2
+  clubGrip.position.x = 1.75
+  club.add(clubBody, clubGrip)
+  for (let i = 0; i < 5; i++) {
+    const spike = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.38, 6), kaidoGold)
+    spike.position.set(-1.15 + i * 0.58, 0.2, 0)
+    spike.rotation.z = -Math.PI / 2
+    club.add(spike)
+  }
+  armR.add(club)
+  seaKing.add(armR)
+
+  for (const side of [-1, 1]) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.55, 2.8, 8), kaidoSkin)
+    leg.position.set(side * 0.68, 1.25, 0)
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.28, 1.35), kaidoGold)
+    foot.position.set(side * 0.68, -0.05, -0.18)
+    seaKing.add(leg, foot)
+  }
+
   place(seaKing, bossCx, bossCz, 0)
   seaKing.visible = false
   seaKing.userData = {
     kind: 'boss',
-    hp: 40,
-    maxHp: 40,
+    displayName: 'Kaido',
+    hp: 140,
+    maxHp: 140,
     alive: true,
+    phase: 'idle',
+    cooldown: 1.8,
+    attackT: 0,
+    hitFlash: 0,
+    invuln: 0,
+    didHit: false,
+    armR,
+    club,
+    head,
+    chest,
+    home: new THREE.Vector3(bossCx, groundY(bossCx, bossCz), bossCz),
   }
   scene.add(seaKing)
 

@@ -72,6 +72,8 @@ let padRun = false
 let gathering = false
 let aiming = false
 let diveAir = 1
+/** After air runs out, block re-dive until Ctrl is released and air recovers */
+let diveExhausted = false
 let crewBounty = 30_000_000
 /** Crew ids currently attached to the ship */
 const aboard = new Set()
@@ -96,6 +98,8 @@ const spectateVel = new THREE.Vector3()
 let shipTurnVel = 0
 let moveFacing = 0
 let moveFacingInit = false
+/** Soft camera look-height (avoids dive/surface pop) */
+let camLookH = 1.4
 
 // Third-person follow camera (mouse drag orbits; locked behind target)
 let camYaw = Math.PI
@@ -231,6 +235,32 @@ const bubbles = createBubbleSystem(scene)
 const cannonBall = createCannonBall()
 scene.add(cannonBall)
 
+const bossShockwave = new THREE.Mesh(
+  new THREE.RingGeometry(0.8, 1.15, 40),
+  new THREE.MeshBasicMaterial({
+    color: 0xffd180,
+    transparent: true,
+    opacity: 0,
+    side: THREE.DoubleSide,
+  }),
+)
+bossShockwave.rotation.x = -Math.PI / 2
+bossShockwave.visible = false
+bossShockwave.userData = { t: 0, active: false, didHit: false, radius: 0 }
+scene.add(bossShockwave)
+
+const bossBreath = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.55, 1.05, 1, 14, 1, true),
+  new THREE.MeshBasicMaterial({
+    color: 0x8be9ff,
+    transparent: true,
+    opacity: 0,
+  }),
+)
+bossBreath.visible = false
+bossBreath.userData = { t: 0, active: false, didHit: false, len: 0, dir: new THREE.Vector3() }
+scene.add(bossBreath)
+
 // HUD — slim bar always visible; full info panel toggles open/closed
 const hudRoot = document.createElement('div')
 hudRoot.id = 'hud-root'
@@ -239,6 +269,7 @@ hudRoot.innerHTML = `
     <em id="active-char">Playing: Luffy</em>
     <span id="berry-count-mini">Berry: 0</span>
     <span id="hp-count-mini">HP: 100</span>
+    <span id="dive-air-mini" hidden>Dive: 100%</span>
     <button type="button" id="hud-spectate" title="Spectator mode (P)">Spec</button>
     <button type="button" id="hud-open" aria-expanded="false" aria-controls="hud-hint">Info</button>
     <em id="status-line"></em>
@@ -271,6 +302,19 @@ dayNightBtn.title = 'Switch day / night'
 dayNightBtn.setAttribute('aria-label', 'Switch day or night mode')
 document.body.appendChild(dayNightBtn)
 
+const bossHud = document.createElement('div')
+bossHud.id = 'boss-hud'
+bossHud.innerHTML = `
+  <strong>Kaido</strong>
+  <div id="boss-bar"><span id="boss-bar-fill"></span></div>
+`
+document.body.appendChild(bossHud)
+const bossBarFill = bossHud.querySelector('#boss-bar-fill')
+
+const hitFlashEl = document.createElement('div')
+hitFlashEl.id = 'hit-flash'
+document.body.appendChild(hitFlashEl)
+
 function refreshDayNightBtn() {
   const mode = dayNight.getMode()
   const isNight = mode === 'night'
@@ -296,6 +340,9 @@ const quest = createQuestSystem({
       seaKing.visible = true
       seaKing.userData.alive = true
       seaKing.userData.hp = seaKing.userData.maxHp
+      seaKing.userData.phase = 'idle'
+      seaKing.userData.cooldown = 1.8
+      refreshBossHud()
     }
     sfx.gear()
     setStatus('BOSS ISLAND UNLOCKED — sail southwest!')
@@ -303,8 +350,9 @@ const quest = createQuestSystem({
     addBounty(2_000_000, 'World Government noticed…')
   },
   onBossDefeated() {
-    addBounty(10_000_000, 'Sea King defeated!')
+    addBounty(10_000_000, 'Kaido defeated!')
     setStatus('You cleared Boss Island!')
+    refreshBossHud()
     setTimeout(() => setStatus(''), 2500)
   },
 })
@@ -316,6 +364,7 @@ const hudCloseBtn = hudRoot.querySelector('#hud-close')
 const activeLabel = hudRoot.querySelector('#active-char')
 const activeLabelPanel = hudRoot.querySelector('#active-char-panel')
 const statusLine = hudRoot.querySelector('#status-line')
+const diveAirMini = hudRoot.querySelector('#dive-air-mini')
 const berryLabel = hudRoot.querySelector('#berry-count')
 const berryMini = hudRoot.querySelector('#berry-count-mini')
 const chestLabel = hudRoot.querySelector('#chest-count')
@@ -361,7 +410,28 @@ document.addEventListener(
 )
 
 function setStatus(text) {
+  if (getPlayer()?.userData?.diving && !text) return
   statusLine.textContent = text || ''
+}
+
+let lastDiveHud = ''
+function refreshDiveHud() {
+  const player = getPlayer()
+  if (!diveAirMini) return
+  const inWater = !!player?.userData?.swimming || !!player?.userData?.diving
+  // Keep chip mounted in water so HUD layout doesn't reflow/flicker
+  const pct = Math.round(diveAir * 100)
+  const label = diveExhausted
+    ? `Air: ${pct}% (rest)`
+    : player?.userData?.diving
+      ? `Dive: ${pct}%`
+      : inWater
+        ? `Air: ${pct}%`
+        : ''
+  if (label === lastDiveHud) return
+  lastDiveHud = label
+  diveAirMini.hidden = !label
+  if (label) diveAirMini.textContent = label
 }
 
 function formatBounty(n) {
@@ -396,6 +466,52 @@ function refreshStats() {
     : fruitBuff
       ? `Buff: ${fruitBuff.label}`
       : 'Buff: —'
+}
+
+function refreshBossHud() {
+  const activeBoss = seaKing?.visible && seaKing.userData.alive
+  bossHud.classList.toggle('boss-hud-visible', !!activeBoss)
+  if (!activeBoss) return
+  const pct = THREE.MathUtils.clamp(seaKing.userData.hp / seaKing.userData.maxHp, 0, 1)
+  bossBarFill.style.width = `${pct * 100}%`
+  bossHud.classList.toggle('boss-phase-rage', pct < 0.45)
+}
+
+function damagePlayer(amount, reason = 'Kaido strikes!', from = null) {
+  if (spectating || intro?.isActive) return false
+  const player = getPlayer()
+  if (player.userData.damageLock > 0) return false
+  player.userData.damageLock = 0.95
+  playerHp = Math.max(0, playerHp - amount)
+  refreshStats()
+  hitFlashEl.classList.remove('hit-flash-on')
+  void hitFlashEl.offsetWidth
+  hitFlashEl.classList.add('hit-flash-on')
+  if (from) {
+    tmp.copy(player.position).sub(from)
+    tmp.y = 0
+    if (tmp.lengthSq() < 0.01) tmp.set(0, 0, 1)
+    tmp.normalize()
+    player.position.addScaledVector(tmp, 2.1)
+    player.userData.velY = Math.max(player.userData.velY || 0, 3.8)
+    player.userData.onGround = false
+    playerVel.addScaledVector(tmp, 8)
+  }
+  setStatus(reason)
+  setTimeout(() => setStatus(''), 900)
+  if (playerHp <= 0) {
+    const home = ship.userData.home
+    playerHp = 100
+    player.position.set(home.x - 5, groundY(home.x - 5, home.z), home.z + 3)
+    playerVel.set(0, 0, 0)
+    player.userData.velY = 0
+    player.userData.onGround = true
+    player.userData.swimming = false
+    refreshStats()
+    setStatus('Kaido crushed you... Respawned at the pier')
+    setTimeout(() => setStatus(''), 1800)
+  }
+  return true
 }
 
 // Characters — spread across the archipelago; only the active one is controlled
@@ -881,22 +997,26 @@ function hitBarrels(origin, range, damage) {
       setTimeout(() => setStatus(''), 900)
     }
   }
-  // Sea King boss
+  // Kaido boss
   if (
     seaKing?.visible &&
     seaKing.userData.alive &&
     origin.distanceTo(seaKing.position) < range + 2.5
   ) {
+    if (seaKing.userData.invuln > 0) return hit
     seaKing.userData.hp -= dmg
-    seaKing.rotation.y += 0.2
-    seaKing.scale.setScalar(0.95 + 0.05 * (seaKing.userData.hp / seaKing.userData.maxHp))
+    seaKing.rotation.y += 0.12
+    seaKing.userData.hitFlash = 0.2
+    seaKing.userData.invuln = 0.08
     hit = true
-    setStatus(`Sea King HP ${Math.max(0, Math.ceil(seaKing.userData.hp))}`)
+    refreshBossHud()
+    setStatus(`Kaido HP ${Math.max(0, Math.ceil(seaKing.userData.hp))}`)
     if (seaKing.userData.hp <= 0) {
       seaKing.userData.alive = false
-      seaKing.visible = false
+      seaKing.userData.phase = 'downed'
       berryCount += 25
       refreshStats()
+      refreshBossHud()
       sfx.smash()
       quest.onBossDefeated()
     }
@@ -1072,7 +1192,9 @@ function tryJump() {
     // Surface from dive
     player.userData.diving = false
     diveAir = Math.min(1, diveAir + 0.3)
+    if (diveAir >= 0.4) diveExhausted = false
     sfx.splash()
+    refreshDiveHud()
     return
   }
   if (player.userData.swimming) return
@@ -1268,19 +1390,47 @@ const pad = createMobileGamepad({
 // Input
 window.addEventListener('keydown', (e) => {
   if (intro?.isActive) return
+
+  const isCtrl =
+    e.ctrlKey ||
+    e.metaKey ||
+    e.code === 'ControlLeft' ||
+    e.code === 'ControlRight' ||
+    e.code === 'MetaLeft' ||
+    e.code === 'MetaRight'
+
+  // Block browser shortcuts (zoom, bookmarks, find, refresh…) so they don't fight the game UI
+  if (isCtrl) e.preventDefault()
+
   sfx.unlock()
-  const k = e.key.toLowerCase()
-  if (k in keys) keys[k] = true
-  if (e.code === 'Space') keys.space = true
+
+  // Movement / dive flags — allow WASD while diving with Ctrl held
+  if (e.code === 'ControlLeft' || e.code === 'ControlRight') {
+    keys.control = true
+    return
+  }
   if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys.shift = true
-  if (e.code === 'ControlLeft' || e.code === 'ControlRight') keys.control = true
+  if (e.code === 'Space') keys.space = true
+
+  const k = e.key.toLowerCase()
+  if (k === 'control' || k === 'meta' || k === 'alt') return
+
+  // Always track move keys, even during Ctrl-dive
+  if (k === 'w' || k === 'a' || k === 's' || k === 'd' || k === 'v') {
+    keys[k] = true
+  }
+
+  // Block Ctrl/Cmd chords from firing game actions (bloom, crew switch, etc.)
+  // that were making the HUD/scene flicker
+  if (e.ctrlKey || e.metaKey) return
+
   if (e.repeat) return
+
   if (k === 'p') {
     toggleSpectator()
     return
   }
   if (spectating) {
-    // Numbers take control of that character; [/] cycle watch focus
     if (k === '1') setActive('luffy')
     if (k === '2') setActive('zoro')
     if (k === '3') setActive('nami')
@@ -1327,12 +1477,25 @@ window.addEventListener('keydown', (e) => {
   }
 })
 window.addEventListener('keyup', (e) => {
+  if (e.ctrlKey || e.metaKey) e.preventDefault()
   const k = e.key.toLowerCase()
+  if (k === 'control' || k === 'meta') {
+    keys.control = false
+    return
+  }
   if (k in keys) keys[k] = false
   if (e.code === 'Space') keys.space = false
   if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys.shift = false
   if (e.code === 'ControlLeft' || e.code === 'ControlRight') keys.control = false
 })
+// Stop Ctrl+wheel browser zoom from resizing the page and breaking the HUD
+window.addEventListener(
+  'wheel',
+  (e) => {
+    if (e.ctrlKey || e.metaKey) e.preventDefault()
+  },
+  { passive: false },
+)
 window.addEventListener('mousedown', (e) => {
   if (e.button === 2 && active === 'usopp') keys.v = true
 })
@@ -1579,6 +1742,7 @@ function updateShip(delta) {
 
 function updatePlayer(delta, t) {
   const player = getPlayer()
+  player.userData.damageLock = Math.max(0, (player.userData.damageLock || 0) - delta)
   moveDir.set(0, 0, 0)
   // Use orbit yaw (not live camera matrix) so move never feeds camera spin
   camForward.set(-Math.sin(camYaw), 0, -Math.cos(camYaw))
@@ -1691,28 +1855,42 @@ function updatePlayer(delta, t) {
         if (player.userData.swimming && !wasSwim) sfx.splash()
       }
     } else {
-      const wantDive =
+      // Start dive needs air; once underwater, stay down until Ctrl release or 0%
+      // (old diveAir > 0.12 check caused surface↔dive flicker near empty)
+      const startDive =
         keys.control &&
-        (player.userData.swimming ||
-          groundY(player.position.x, player.position.z) <= SWIM_LAND_THRESHOLD)
-      applyTerrainOrSwim(player, { diving: wantDive && diveAir > 0.05 })
+        !!player.userData.swimming &&
+        !player.userData.diving &&
+        !diveExhausted &&
+        diveAir >= 0.25
+      const keepDive =
+        !!player.userData.diving && keys.control && diveAir > 0 && !diveExhausted
+      const wantDive = startDive || keepDive
+      applyTerrainOrSwim(player, { diving: wantDive })
       if (player.userData.swimming && !wasSwim) sfx.splash()
 
       if (player.userData.diving) {
-        diveAir = Math.max(0, diveAir - delta * 0.28)
+        // ~12s full tank (was ~3.5s)
+        diveAir = Math.max(0, diveAir - delta * 0.085)
         if (diveAir <= 0) {
+          diveAir = 0
+          diveExhausted = true
           player.userData.diving = false
           applyTerrainOrSwim(player)
-          setStatus('Out of breath!')
-          setTimeout(() => setStatus(''), 900)
-        } else if (!statusLine.textContent) {
-          setStatus(`Diving… ${Math.round(diveAir * 100)}% air · Space to surface`)
+          refreshDiveHud()
+          setStatus('Out of breath! Release Ctrl and recover')
+          setTimeout(() => {
+            if (statusLine.textContent.startsWith('Out of breath')) setStatus('')
+          }, 1600)
         }
       } else if (player.userData.swimming) {
-        diveAir = Math.min(1, diveAir + delta * 0.35)
+        diveAir = Math.min(1, diveAir + delta * 0.22)
+        if (!keys.control && diveAir >= 0.35) diveExhausted = false
       } else {
         diveAir = 1
+        if (!keys.control) diveExhausted = false
       }
+      refreshDiveHud()
     }
   }
 
@@ -1724,11 +1902,9 @@ function updatePlayer(delta, t) {
     climbing: player.userData.climbing,
   })
 
-  updateFollowCamera(
-    player.position,
-    delta,
-    player.userData.diving ? 0.4 : swimming ? 0.9 : 1.4,
-  )
+  const targetLook = player.userData.diving ? 0.45 : swimming ? 0.9 : 1.4
+  camLookH += (targetLook - camLookH) * (1 - Math.exp(-8 * delta))
+  updateFollowCamera(player.position, delta, camLookH)
 }
 
 function updateIdleCrew(delta, t) {
@@ -1855,6 +2031,157 @@ function updateSlashVfx(delta) {
   }
 }
 
+function updateBossFight(delta, t) {
+  if (!seaKing?.visible) {
+    bossShockwave.visible = false
+    bossBreath.visible = false
+    refreshBossHud()
+    return
+  }
+
+  const boss = seaKing
+  const data = boss.userData
+  data.cooldown = Math.max(0, (data.cooldown || 0) - delta)
+  data.attackT = Math.max(0, (data.attackT || 0) - delta)
+  data.invuln = Math.max(0, (data.invuln || 0) - delta)
+  data.hitFlash = Math.max(0, (data.hitFlash || 0) - delta)
+  refreshBossHud()
+
+  if (!data.alive) {
+    boss.rotation.z = THREE.MathUtils.lerp(boss.rotation.z, -1.35, 1 - Math.exp(-3 * delta))
+    boss.position.y = Math.max(groundY(boss.position.x, boss.position.z), boss.position.y - delta * 0.8)
+    if (boss.rotation.z < -1.26) boss.visible = false
+    bossBreath.visible = false
+    bossShockwave.visible = false
+    return
+  }
+
+  const player = getPlayer()
+  const aggro =
+    !spectating &&
+    !intro?.isActive &&
+    !onShip &&
+    quest.bossUnlocked &&
+    player.position.distanceTo(boss.position) < 34
+
+  const rage = data.hp / data.maxHp < 0.45
+  const moveSpeed = rage ? 4.4 : 3.1
+  const dx = player.position.x - boss.position.x
+  const dz = player.position.z - boss.position.z
+  const dist = Math.hypot(dx, dz)
+  const targetYaw = Math.atan2(dx, dz)
+  boss.rotation.y += shortestAngle(boss.rotation.y, targetYaw) * (1 - Math.exp(-4 * delta))
+
+  const pulse = 0.45 + Math.sin(t * (rage ? 9 : 6)) * 0.18
+  data.chest.material.emissiveIntensity = 0.18 + data.hitFlash * 1.8 + pulse * 0.25
+
+  if (!aggro) {
+    boss.position.x += (data.home.x - boss.position.x) * Math.min(1, delta * 0.7)
+    boss.position.z += (data.home.z - boss.position.z) * Math.min(1, delta * 0.7)
+    data.phase = 'idle'
+    data.armR.rotation.x += (0 - data.armR.rotation.x) * (1 - Math.exp(-5 * delta))
+    data.armR.rotation.z += (0.15 - data.armR.rotation.z) * (1 - Math.exp(-5 * delta))
+    bossBreath.visible = false
+    bossShockwave.visible = false
+    return
+  }
+
+  if (data.phase === 'idle' && data.cooldown <= 0) {
+    if (dist < 5.2) {
+      data.phase = 'swing'
+      data.attackT = rage ? 0.82 : 0.95
+      data.didHit = false
+      setStatus('Kaido winds up Thunder Bagua!')
+    } else if (dist < 16) {
+      data.phase = 'breath'
+      data.attackT = rage ? 1.35 : 1.55
+      data.didHit = false
+      bossBreath.visible = true
+      bossBreath.material.opacity = 0.88
+      setStatus('Kaido charges Boro Breath!')
+    } else {
+      data.cooldown = 0.2
+    }
+  }
+
+  if (data.phase === 'idle' && dist > 4.3) {
+    boss.position.x += Math.sin(boss.rotation.y) * moveSpeed * delta
+    boss.position.z += Math.cos(boss.rotation.y) * moveSpeed * delta
+  } else if (data.phase === 'swing') {
+    const p = 1 - data.attackT / (rage ? 0.82 : 0.95)
+    if (p < 0.45) {
+      data.armR.rotation.x = -0.8 - p * 2.8
+      data.armR.rotation.z = 0.35
+    } else {
+      data.armR.rotation.x = -2.05 + (p - 0.45) * 5.9
+      data.armR.rotation.z = -0.15
+      if (!bossShockwave.userData.active) {
+        bossShockwave.visible = true
+        bossShockwave.material.opacity = 0.85
+        bossShockwave.position.set(boss.position.x, groundY(boss.position.x, boss.position.z) + 0.12, boss.position.z)
+        bossShockwave.userData = { t: 0, active: true, didHit: false, radius: 2.2 }
+      }
+      if (!data.didHit && dist < 5.7) {
+        damagePlayer(rage ? 22 : 16, 'Thunder Bagua!', boss.position)
+        data.didHit = true
+      }
+    }
+    if (data.attackT <= 0) {
+      data.phase = 'idle'
+      data.cooldown = rage ? 1.15 : 1.6
+    }
+  } else if (data.phase === 'breath') {
+    const mouth = data.head.position.clone().applyMatrix4(boss.matrixWorld)
+    const dir = tmp.copy(player.position).sub(mouth).setY(0.2).normalize()
+    bossBreath.visible = true
+    bossBreath.userData.active = true
+    bossBreath.userData.dir.copy(dir)
+    const len = THREE.MathUtils.clamp(dist, 6, 15)
+    bossBreath.userData.len = len
+    bossBreath.scale.set(1, len, 1)
+    bossBreath.position.copy(mouth).addScaledVector(dir, len * 0.5)
+    bossBreath.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir)
+    bossBreath.material.opacity = rage ? 0.92 : 0.8
+    if (!data.didHit && data.attackT < (rage ? 0.82 : 0.95)) {
+      const toPlayer = player.position.clone().sub(mouth)
+      const along = toPlayer.dot(dir)
+      const lateral = toPlayer.clone().sub(dir.clone().multiplyScalar(along)).length()
+      if (along > 0 && along < len + 1 && lateral < 1.9) {
+        damagePlayer(rage ? 18 : 12, 'Boro Breath scorched you!', mouth)
+      }
+      data.didHit = true
+    }
+    if (data.attackT <= 0) {
+      data.phase = 'idle'
+      data.cooldown = rage ? 1.0 : 1.45
+      bossBreath.visible = false
+      bossBreath.userData.active = false
+    }
+  }
+
+  if (bossShockwave.userData.active) {
+    bossShockwave.userData.t += delta
+    bossShockwave.userData.radius += (rage ? 9 : 7) * delta
+    bossShockwave.scale.setScalar(bossShockwave.userData.radius)
+    bossShockwave.material.opacity = Math.max(0, 0.85 - bossShockwave.userData.t * 1.6)
+    if (
+      !bossShockwave.userData.didHit &&
+      player.position.distanceTo(bossShockwave.position) < bossShockwave.userData.radius + 1.3
+    ) {
+      damagePlayer(rage ? 10 : 7, 'Shockwave clipped you!', boss.position)
+      bossShockwave.userData.didHit = true
+    }
+    if (bossShockwave.userData.t > 0.6) {
+      bossShockwave.visible = false
+      bossShockwave.userData.active = false
+    }
+  }
+
+  if (!bossBreath.visible) {
+    bossBreath.material.opacity = 0
+  }
+}
+
 function updateIntroAmbient(delta, t) {
   const wy = sampleWaveHeight(ship.position.x, ship.position.z, t)
   ship.position.y = 0.18 + wy * 0.85
@@ -1887,6 +2214,8 @@ function animate() {
     setStatus('Feast buff faded')
     setTimeout(() => setStatus(''), 1000)
   }
+
+  updateBossFight(delta, t)
 
   if (intro?.isActive) {
     intro.update(delta)
@@ -1943,7 +2272,10 @@ function animate() {
     updateFruits(t)
     updatePellet(delta)
 
-    if (nearShip(getPlayer())) {
+    const player = getPlayer()
+    const showHints = !player.userData.diving && !keys.control
+
+    if (showHints && nearShip(player)) {
       if (!boardHintShown) {
         setStatus('Press E to board Going Merry')
         boardHintShown = true
@@ -1952,38 +2284,40 @@ function animate() {
       boardHintShown = false
     }
 
-    for (const chest of chests) {
-      if (chest.userData.opened) continue
-      if (getPlayer().position.distanceTo(chest.position) < 2.4) {
-        if (!statusLine.textContent) setStatus('Press E to open treasure chest')
-        break
+    if (showHints) {
+      for (const chest of chests) {
+        if (chest.userData.opened) continue
+        if (player.position.distanceTo(chest.position) < 2.4) {
+          if (!statusLine.textContent) setStatus('Press E to open treasure chest')
+          break
+        }
       }
-    }
 
-    if (
-      meat &&
-      !meat.userData.taken &&
-      getPlayer().position.distanceTo(meat.position) < 2
-    ) {
-      if (!statusLine.textContent) setStatus('Press E to eat meat (+HP)')
-    }
-
-    if (
-      cookStation &&
-      getPlayer().position.distanceTo(cookStation.position) < 2.8
-    ) {
-      if (!statusLine.textContent) {
-        setStatus(
-          active === 'sanji'
-            ? 'E: cook All Blue feast (5 Berries)'
-            : 'E: cook at Sanji’s station (3 Berries)',
-        )
+      if (
+        meat &&
+        !meat.userData.taken &&
+        player.position.distanceTo(meat.position) < 2
+      ) {
+        if (!statusLine.textContent) setStatus('Press E to eat meat (+HP)')
       }
-    }
 
-    const cp = nearestClimb(getPlayer())
-    if (cp && getPlayer().position.y < cp.topY - 0.5 && !getPlayer().userData.climbing) {
-      if (!statusLine.textContent) setStatus('Hold W near structure to climb')
+      if (
+        cookStation &&
+        player.position.distanceTo(cookStation.position) < 2.8
+      ) {
+        if (!statusLine.textContent) {
+          setStatus(
+            active === 'sanji'
+              ? 'E: cook All Blue feast (5 Berries)'
+              : 'E: cook at Sanji’s station (3 Berries)',
+          )
+        }
+      }
+
+      const cp = nearestClimb(player)
+      if (cp && player.position.y < cp.topY - 0.5 && !player.userData.climbing) {
+        if (!statusLine.textContent) setStatus('Hold W near structure to climb')
+      }
     }
   }
 

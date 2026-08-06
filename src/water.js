@@ -151,7 +151,9 @@ export function createOceanWater() {
     update(t, { night = 0, dive = false, sunDir = null } = {}) {
       mat.uniforms.uTime.value = t
       mat.uniforms.uNight.value = night
-      mat.uniforms.uDive.value = dive ? 1 : 0
+      // Soft blend — hard 0/1 snaps caused a full-screen flicker on surface/dive
+      const target = dive ? 1 : 0
+      mat.uniforms.uDive.value += (target - mat.uniforms.uDive.value) * 0.12
       if (sunDir) mat.uniforms.uSunDir.value.copy(sunDir).normalize()
     },
   }

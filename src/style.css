@@ -11,6 +11,8 @@ body {
   overflow: hidden;
   background: #7ec8e8;
   touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 #canvas {
@@ -209,6 +211,87 @@ body.intro-active #mobile-pad {
 
 #quest-log.quest-done strong {
   color: #2e7d32;
+}
+
+#boss-hud {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-18px);
+  z-index: 14;
+  min-width: min(420px, calc(100vw - 56px));
+  padding: 10px 12px;
+  background: rgba(20, 16, 26, 0.82);
+  border: 3px solid #6a1b9a;
+  border-radius: 14px;
+  box-shadow: 3px 3px 0 #1a1a1a;
+  color: #fff8e1;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease,
+    border-color 0.2s ease;
+}
+
+#boss-hud strong {
+  display: block;
+  margin-bottom: 6px;
+  font: 800 14px/1 'Trebuchet MS', 'Segoe UI', sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+#boss-hud.boss-hud-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+#boss-hud.boss-phase-rage {
+  border-color: #ff6f00;
+}
+
+#boss-bar {
+  height: 16px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  overflow: hidden;
+  border: 2px solid rgba(255, 248, 225, 0.65);
+}
+
+#boss-bar-fill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #7b1fa2, #ef5350 68%, #ffca28);
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.22);
+  transition: width 0.12s linear;
+}
+
+#hit-flash {
+  position: fixed;
+  inset: 0;
+  z-index: 13;
+  pointer-events: none;
+  opacity: 0;
+  background:
+    radial-gradient(circle at center, rgba(255, 90, 90, 0.08), rgba(180, 0, 0, 0.24)),
+    linear-gradient(rgba(255, 0, 0, 0.08), rgba(255, 0, 0, 0.08));
+}
+
+#hit-flash.hit-flash-on {
+  animation: hit-flash 0.34s ease-out;
+}
+
+@keyframes hit-flash {
+  0% {
+    opacity: 0.75;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
 #day-night-toggle {
@@ -602,6 +685,17 @@ body.spectating .pad-spec {
 }
 
 @media (max-width: 700px) {
+  #boss-hud {
+    top: 8px;
+    min-width: calc(100vw - 24px);
+    padding: 8px 10px;
+  }
+  #boss-hud strong {
+    font-size: 12px;
+  }
+  #boss-bar {
+    height: 14px;
+  }
   #hud-root {
     top: 8px;
     left: 8px;
