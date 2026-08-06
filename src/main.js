@@ -27,12 +27,26 @@ import {
   WATER_SURFACE,
   SWIM_LAND_THRESHOLD,
 } from './world.js'
+import {
+  createWeatherSystem,
+  createDayNight,
+  createBubbleSystem,
+  createCannonBall,
+} from './systems.js'
 import { sfx } from './audio.js'
 import { createMobileGamepad } from './gamepad.js'
 
 const canvas = document.querySelector('#canvas')
 
-const keys = { w: false, a: false, s: false, d: false, shift: false }
+const keys = {
+  w: false,
+  a: false,
+  s: false,
+  d: false,
+  shift: false,
+  v: false,
+  control: false,
+}
 
 let active = 'luffy'
 let bloomEnabled = true
@@ -43,10 +57,15 @@ let chestsOpened = 0
 let barrelsSmashed = 0
 let playerHp = 100
 let fruitBuff = null // { buff, label, until }
+let cookBuff = null // { until, mul }
 let padRun = false
 let gathering = false
+let aiming = false
+let diveAir = 1
+let crewBounty = 30_000_000
 /** Crew ids currently attached to the ship */
 const aboard = new Set()
+const exposureRef = { current: 1.15 }
 
 const GRAVITY = 22
 const JUMP_V = 8.5
@@ -94,7 +113,8 @@ controls.maxDistance = 48
 controls.maxPolarAngle = Math.PI * 0.47
 controls.target.set(0, 1.4, 0)
 
-scene.add(new THREE.HemisphereLight(0xfff1c9, 0x3d8f7a, 0.75))
+const hemi = new THREE.HemisphereLight(0xfff1c9, 0x3d8f7a, 0.75)
+scene.add(hemi)
 const sun = new THREE.DirectionalLight(0xfff3d0, 1.55)
 sun.position.set(40, 55, 25)
 sun.castShadow = true
@@ -121,40 +141,36 @@ const bloomPass = new UnrealBloomPass(
 composer.addPass(bloomPass)
 
 // Sky
-scene.add(
-  new THREE.Mesh(
-    new THREE.SphereGeometry(280, 32, 16),
-    new THREE.ShaderMaterial({
-      side: THREE.BackSide,
-      depthWrite: false,
-      uniforms: {
-        topColor: { value: new THREE.Color(0x3d8fd1) },
-        midColor: { value: new THREE.Color(0x8ec8ef) },
-        bottomColor: { value: new THREE.Color(0xf7f3e8) },
-      },
-      vertexShader: `
-        varying vec3 vWorld;
-        void main() {
-          vec4 w = modelMatrix * vec4(position, 1.0);
-          vWorld = w.xyz;
-          gl_Position = projectionMatrix * viewMatrix * w;
-        }
-      `,
-      fragmentShader: `
-        uniform vec3 topColor;
-        uniform vec3 midColor;
-        uniform vec3 bottomColor;
-        varying vec3 vWorld;
-        void main() {
-          float h = normalize(vWorld).y;
-          vec3 col = mix(bottomColor, midColor, smoothstep(-0.05, 0.25, h));
-          col = mix(col, topColor, smoothstep(0.2, 0.9, h));
-          gl_FragColor = vec4(col, 1.0);
-        }
-      `,
-    }),
-  ),
-)
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide,
+  depthWrite: false,
+  uniforms: {
+    topColor: { value: new THREE.Color(0x3d8fd1) },
+    midColor: { value: new THREE.Color(0x8ec8ef) },
+    bottomColor: { value: new THREE.Color(0xf7f3e8) },
+  },
+  vertexShader: `
+    varying vec3 vWorld;
+    void main() {
+      vec4 w = modelMatrix * vec4(position, 1.0);
+      vWorld = w.xyz;
+      gl_Position = projectionMatrix * viewMatrix * w;
+    }
+  `,
+  fragmentShader: `
+    uniform vec3 topColor;
+    uniform vec3 midColor;
+    uniform vec3 bottomColor;
+    varying vec3 vWorld;
+    void main() {
+      float h = normalize(vWorld).y;
+      vec3 col = mix(bottomColor, midColor, smoothstep(-0.05, 0.25, h));
+      col = mix(col, topColor, smoothstep(0.2, 0.9, h));
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `,
+})
+scene.add(new THREE.Mesh(new THREE.SphereGeometry(280, 32, 16), skyMat))
 
 const world = buildWorld(scene)
 const {
@@ -169,7 +185,21 @@ const {
   fruits,
   climbPoints,
   meat,
+  bountyBoard,
+  cookStation,
 } = world
+
+const weather = createWeatherSystem(scene)
+const dayNight = createDayNight({
+  sun,
+  hemi,
+  fog: scene.fog,
+  skyMat,
+  exposureRef,
+})
+const bubbles = createBubbleSystem(scene)
+const cannonBall = createCannonBall()
+scene.add(cannonBall)
 
 // HUD — slim bar always visible; full info panel toggles open/closed
 const hudRoot = document.createElement('div')
@@ -187,19 +217,44 @@ hudRoot.innerHTML = `
       <strong>Grand Line Archipelago</strong>
       <button type="button" id="hud-close" aria-label="Close info">×</button>
     </div>
-    <span>WASD · Space jump · F attack · C call crew · G Gear 5 · E interact · H recall · 1-0 switch</span>
+    <span>WASD · Space jump · F attack · V aim (Usopp) · Ctrl dive · C call · G Gear 5 · E cook/board · H recall</span>
     <em id="active-char-panel">Playing: Luffy</em>
     <div id="hud-stats">
       <span id="berry-count">Berry: 0</span>
       <span id="hp-count">HP: 100</span>
       <span id="chest-count">Chests: 0/6</span>
       <span id="barrel-count">Barrels: 0</span>
+      <span id="bounty-count">Bounty: 30M</span>
       <span id="buff-count">Buff: —</span>
     </div>
     <div id="crew-strip"></div>
   </div>
 `
 document.body.appendChild(hudRoot)
+
+const dayNightBtn = document.createElement('button')
+dayNightBtn.type = 'button'
+dayNightBtn.id = 'day-night-toggle'
+dayNightBtn.title = 'Switch day / night'
+dayNightBtn.setAttribute('aria-label', 'Switch day or night mode')
+document.body.appendChild(dayNightBtn)
+
+function refreshDayNightBtn() {
+  const mode = dayNight.getMode()
+  const isNight = mode === 'night'
+  dayNightBtn.textContent = isNight ? 'Night' : 'Day'
+  dayNightBtn.dataset.mode = mode
+  dayNightBtn.setAttribute('aria-pressed', isNight ? 'true' : 'false')
+}
+
+dayNightBtn.addEventListener('click', (e) => {
+  e.stopPropagation()
+  const mode = dayNight.toggle()
+  refreshDayNightBtn()
+  setStatus(mode === 'night' ? 'Night mode' : 'Day mode')
+  setTimeout(() => setStatus(''), 1000)
+})
+refreshDayNightBtn()
 
 const hint = hudRoot.querySelector('#hud-hint')
 const hudOpenBtn = hudRoot.querySelector('#hud-open')
@@ -214,6 +269,7 @@ const barrelLabel = hudRoot.querySelector('#barrel-count')
 const hpLabel = hudRoot.querySelector('#hp-count')
 const hpMini = hudRoot.querySelector('#hp-count-mini')
 const buffLabel = hudRoot.querySelector('#buff-count')
+const bountyLabel = hudRoot.querySelector('#bounty-count')
 const crewStrip = hudRoot.querySelector('#crew-strip')
 
 function setHudOpen(open) {
@@ -250,6 +306,23 @@ function setStatus(text) {
   statusLine.textContent = text || ''
 }
 
+function formatBounty(n) {
+  if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`
+  return `${Math.round(n)}`
+}
+
+function addBounty(amount, reason) {
+  crewBounty += amount
+  bountyBoard?.userData.draw(crewBounty)
+  bountyBoard.userData.bounty = crewBounty
+  refreshStats()
+  if (reason) {
+    setStatus(`${reason} · Bounty ${formatBounty(crewBounty)}฿`)
+    setTimeout(() => setStatus(''), 1400)
+  }
+}
+
 function refreshStats() {
   const berry = `Berry: ${berryCount}`
   const hp = `HP: ${Math.max(0, Math.round(playerHp))}`
@@ -259,9 +332,12 @@ function refreshStats() {
   hpMini.textContent = hp
   chestLabel.textContent = `Chests: ${chestsOpened}/${chests.length}`
   barrelLabel.textContent = `Barrels: ${barrelsSmashed}`
-  buffLabel.textContent = fruitBuff
-    ? `Buff: ${fruitBuff.label}`
-    : 'Buff: —'
+  if (bountyLabel) bountyLabel.textContent = `Bounty: ${formatBounty(crewBounty)}฿`
+  buffLabel.textContent = cookBuff
+    ? 'Buff: All Blue feast'
+    : fruitBuff
+      ? `Buff: ${fruitBuff.label}`
+      : 'Buff: —'
 }
 
 // Characters — spread across the archipelago; only the active one is controlled
@@ -527,6 +603,40 @@ function tryBoardToggle() {
   if (nearShip(getPlayer())) boardShip()
 }
 
+function tryCook() {
+  if (!cookStation) return false
+  const player = getPlayer()
+  if (player.position.distanceTo(cookStation.position) > 2.8) return false
+
+  const isSanji = active === 'sanji'
+  const cost = isSanji ? 5 : 3
+  if (berryCount < cost) {
+    setStatus(`Need ${cost} Berries to cook${isSanji ? ' (All Blue)' : ''}`)
+    setTimeout(() => setStatus(''), 1400)
+    return true
+  }
+
+  berryCount -= cost
+  const heal = isSanji ? 80 : 50
+  playerHp = Math.min(100, playerHp + heal)
+  if (isSanji) {
+    cookBuff = { until: clock.elapsedTime + 20, mul: 1.35 }
+    sfx.cook()
+    setStatus(`All Blue feast! +${heal} HP · ATK up 20s`)
+  } else {
+    sfx.heal()
+    setStatus(`Sanji's kitchen leftovers! +${heal} HP`)
+  }
+  // Flash flame
+  if (cookStation.userData.flame) {
+    cookStation.userData.flame.scale.setScalar(1.6)
+    setTimeout(() => cookStation.userData.flame.scale.setScalar(1), 400)
+  }
+  refreshStats()
+  setTimeout(() => setStatus(''), 1600)
+  return true
+}
+
 function tryInteract() {
   sfx.unlock()
   if (onShip) {
@@ -534,6 +644,8 @@ function tryInteract() {
     return
   }
   const player = getPlayer()
+
+  if (tryCook()) return
 
   for (const chest of chests) {
     if (chest.userData.opened) continue
@@ -543,6 +655,7 @@ function tryInteract() {
       chest.userData.lid.position.z = -0.25
       berryCount += 5
       chestsOpened++
+      addBounty(500_000, 'Chest claimed')
       refreshStats()
       sfx.chest()
       setStatus('Treasure! +5 Berry')
@@ -555,6 +668,8 @@ function tryInteract() {
     meat.userData.taken = true
     meat.visible = false
     playerHp = Math.min(100, playerHp + 35)
+    // Meat respawns later at kitchen area vibe — store for respawn
+    meat.userData.respawnAt = clock.elapsedTime + 45
     refreshStats()
     sfx.heal()
     setStatus('Meat! +35 HP')
@@ -567,7 +682,7 @@ function tryInteract() {
     return
   }
 
-  setStatus('Nothing nearby — chests, Merry, meat, or fruits')
+  setStatus('Nothing nearby — cook station, chests, Merry, meat, fruits')
   setTimeout(() => setStatus(''), 1400)
 }
 
@@ -576,6 +691,7 @@ function damageMul() {
   if (fruitBuff?.buff === 'stretch' || fruitBuff?.buff === 'bloom') m *= 1.5
   if (fruitBuff?.buff === 'charm') m *= 1.25
   if (active === 'luffy' && characters.luffy.userData.gear5) m *= 1.4
+  if (cookBuff) m *= cookBuff.mul
   return m
 }
 
@@ -591,8 +707,10 @@ function hitBarrels(origin, range, damage) {
     hit = true
     if (barrel.userData.hp <= 0) {
       barrel.visible = false
+      barrel.userData.respawnAt = clock.elapsedTime + 28 + Math.random() * 12
       barrelsSmashed++
       berryCount += 1
+      addBounty(150_000)
       refreshStats()
       sfx.smash()
       setStatus('Barrel smashed! +1 Berry')
@@ -602,9 +720,39 @@ function hitBarrels(origin, range, damage) {
   return hit
 }
 
+function fireShipCannon() {
+  const data = ship.userData
+  if (!data.cannons?.length || data.cannonCooldown > 0) return
+  if (cannonBall.userData.active) return
+  data.cannonCooldown = 0.85
+  // Alternate sides
+  data._cannonIdx = ((data._cannonIdx || 0) + 1) % data.cannons.length
+  const c = data.cannons[data._cannonIdx]
+  ship.updateMatrixWorld(true)
+  c.muzzle.getWorldPosition(cannonBall.position)
+  const side = c.side
+  // Fire sideways relative to ship heading
+  cannonBall.userData.dir
+    .set(
+      Math.sin(ship.rotation.y) * 0.15 + Math.cos(ship.rotation.y) * side,
+      0.08,
+      Math.cos(ship.rotation.y) * 0.15 - Math.sin(ship.rotation.y) * side,
+    )
+    .normalize()
+  cannonBall.userData.t = 0
+  cannonBall.userData.active = true
+  cannonBall.visible = true
+  sfx.cannon()
+  setStatus('Fire!!!')
+  setTimeout(() => setStatus(''), 600)
+}
+
 function doAttack() {
-  if (onShip) return
   sfx.unlock()
+  if (onShip) {
+    fireShipCannon()
+    return
+  }
   const player = getPlayer()
   player.getWorldPosition(attackOrigin)
   attackOrigin.y += 1
@@ -634,15 +782,17 @@ function doAttack() {
     if (triggerKick(player)) {
       hitBarrels(player.position, 3.2, kind === 'sanji' ? 3.2 : 2.2)
       sfx.kick()
-      setStatus(kind === 'sanji' ? 'Diable Jambe!' : 'Heavy Point!' )
+      setStatus(kind === 'sanji' ? 'Diable Jambe!' : 'Heavy Point!')
       setTimeout(() => setStatus(''), 700)
     }
   } else if (kind === 'nami') {
     if (triggerStaff(player)) {
-      hitBarrels(player.position, 3.8, 2.4)
+      hitBarrels(player.position, 4.2, 2.6)
+      weather.trigger(player.position, 3.2)
+      sfx.thunder()
       sfx.staff()
-      setStatus('Clima-Tact!')
-      setTimeout(() => setStatus(''), 700)
+      setStatus('Clima-Tact — Thunderbolt Tempo!')
+      setTimeout(() => setStatus(''), 1000)
     }
   } else if (kind === 'robin') {
     if (triggerBloom(player)) {
@@ -653,14 +803,24 @@ function doAttack() {
     }
   } else if (kind === 'usopp') {
     if (triggerShot(player)) {
+      const sniper = aiming
       pellet.visible = true
       pellet.userData.t = 0
-      pellet.position.copy(player.position).add(new THREE.Vector3(0, 1.2, 0))
-      pellet.userData.dir
-        .set(Math.sin(player.rotation.y), 0, Math.cos(player.rotation.y))
-        .normalize()
+      pellet.userData.maxT = sniper ? 1.8 : 0.9
+      pellet.userData.speed = sniper ? 48 : 28
+      pellet.position.copy(player.position).add(new THREE.Vector3(0, 1.35, 0))
+      // Aim along camera when sniping
+      if (sniper) {
+        camera.getWorldDirection(pellet.userData.dir)
+        pellet.userData.dir.y *= 0.15
+        pellet.userData.dir.normalize()
+      } else {
+        pellet.userData.dir
+          .set(Math.sin(player.rotation.y), 0, Math.cos(player.rotation.y))
+          .normalize()
+      }
       sfx.shot()
-      setStatus('Usopp… Pellèt!')
+      setStatus(sniper ? 'Usopp… SNIPER shot!' : 'Usopp… Pellèt!')
       setTimeout(() => setStatus(''), 700)
     }
   } else if (kind === 'franky') {
@@ -686,6 +846,13 @@ function doAttack() {
 function tryJump() {
   if (onShip) return
   const player = getPlayer()
+  if (player.userData.diving) {
+    // Surface from dive
+    player.userData.diving = false
+    diveAir = Math.min(1, diveAir + 0.3)
+    sfx.splash()
+    return
+  }
   if (player.userData.swimming) return
   if (player.userData.climbing) {
     // leap off climb
@@ -719,6 +886,14 @@ function toggleGear5() {
 function updateBerries(t) {
   const player = getPlayer()
   for (const berry of berries) {
+    // Respawn
+    if (berry.userData.taken && berry.userData.respawnAt && t >= berry.userData.respawnAt) {
+      berry.userData.taken = false
+      berry.visible = true
+      berry.position.x = berry.userData.homeX
+      berry.position.z = berry.userData.homeZ
+      berry.userData.respawnAt = 0
+    }
     if (berry.userData.taken) continue
     berry.rotation.y = t * 2 + berry.userData.spin
     berry.position.y =
@@ -729,12 +904,38 @@ function updateBerries(t) {
     if (!onShip && player.position.distanceTo(berry.position) < 1.4) {
       berry.userData.taken = true
       berry.visible = false
+      berry.userData.respawnAt = t + 22 + Math.random() * 10
       berryCount++
+      addBounty(25_000)
       refreshStats()
       sfx.berry()
       setStatus(`Berry +1  (total ${berryCount})`)
       setTimeout(() => setStatus(''), 700)
     }
+  }
+}
+
+function updateBarrelRespawn(t) {
+  for (const barrel of barrels) {
+    if (
+      !barrel.visible &&
+      barrel.userData.respawnAt &&
+      t >= barrel.userData.respawnAt
+    ) {
+      barrel.visible = true
+      barrel.userData.hp = barrel.userData.maxHp
+      barrel.scale.set(1, 1, 1)
+      barrel.rotation.z = 0
+      barrel.position.x = barrel.userData.homeX
+      barrel.position.z = barrel.userData.homeZ
+      barrel.position.y = groundY(barrel.userData.homeX, barrel.userData.homeZ) + 0.5
+      barrel.userData.respawnAt = 0
+    }
+  }
+  if (meat?.userData.taken && meat.userData.respawnAt && t >= meat.userData.respawnAt) {
+    meat.userData.taken = false
+    meat.visible = true
+    meat.userData.respawnAt = 0
   }
 }
 
@@ -778,9 +979,41 @@ function updateFruits(t) {
 function updatePellet(delta) {
   if (!pellet.visible) return
   pellet.userData.t += delta
-  pellet.position.addScaledVector(pellet.userData.dir, 28 * delta)
-  hitBarrels(pellet.position, 1.2, 2)
-  if (pellet.userData.t > 0.9) pellet.visible = false
+  const spd = pellet.userData.speed || 28
+  pellet.position.addScaledVector(pellet.userData.dir, spd * delta)
+  hitBarrels(pellet.position, aiming ? 1.6 : 1.2, aiming ? 3.2 : 2)
+  if (pellet.userData.t > (pellet.userData.maxT || 0.9)) pellet.visible = false
+}
+
+function updateCannonBall(delta) {
+  if (!cannonBall.userData.active) return
+  cannonBall.userData.t += delta
+  cannonBall.position.addScaledVector(cannonBall.userData.dir, 36 * delta)
+  cannonBall.position.y -= 4 * delta * cannonBall.userData.t
+  hitBarrels(cannonBall.position, 2.2, 4)
+  if (cannonBall.userData.t > 1.4 || cannonBall.position.y < -2) {
+    cannonBall.userData.active = false
+    cannonBall.visible = false
+  }
+}
+
+function updateAimZoom(delta) {
+  aiming = !onShip && active === 'usopp' && !!keys.v
+  const targetFov = aiming ? 28 : 58
+  camera.fov += (targetFov - camera.fov) * Math.min(1, delta * 8)
+  camera.updateProjectionMatrix()
+  if (aiming && !statusLine.textContent) setStatus('Sniper aim — F to fire')
+}
+
+function updateLanterns(night) {
+  const lights = ship.userData.lanternLights || []
+  const intensity = night > 0.35 ? (night - 0.35) * 4.5 : 0
+  for (const entry of lights) {
+    entry.light.intensity = intensity
+    if (entry.mesh?.material) {
+      entry.mesh.material.emissiveIntensity = 0.35 + intensity * 0.4
+    }
+  }
 }
 
 // Mobile pad
@@ -802,6 +1035,7 @@ window.addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase()
   if (k in keys) keys[k] = true
   if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys.shift = true
+  if (e.code === 'ControlLeft' || e.code === 'ControlRight') keys.control = true
   if (e.repeat) return
   if (k === '1') setActive('luffy')
   if (k === '2') setActive('zoro')
@@ -837,6 +1071,16 @@ window.addEventListener('keyup', (e) => {
   const k = e.key.toLowerCase()
   if (k in keys) keys[k] = false
   if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys.shift = false
+  if (e.code === 'ControlLeft' || e.code === 'ControlRight') keys.control = false
+})
+window.addEventListener('mousedown', (e) => {
+  if (e.button === 2 && active === 'usopp') keys.v = true
+})
+window.addEventListener('mouseup', (e) => {
+  if (e.button === 2) keys.v = false
+})
+window.addEventListener('contextmenu', (e) => {
+  if (active === 'usopp') e.preventDefault()
 })
 
 function onResize() {
@@ -881,6 +1125,8 @@ function updateShip(delta) {
     data.speed *= -0.4
     setStatus('Too shallow — steer back to open water')
   }
+
+  if (data.cannonCooldown > 0) data.cannonCooldown -= delta
 
   const t = clock.elapsedTime
   for (const id of aboard) {
@@ -985,10 +1231,32 @@ function updatePlayer(delta, t) {
         if (player.userData.swimming && !wasSwim) sfx.splash()
       }
     } else {
-      applyTerrainOrSwim(player)
+      const wantDive =
+        keys.control &&
+        (player.userData.swimming ||
+          groundY(player.position.x, player.position.z) <= SWIM_LAND_THRESHOLD)
+      applyTerrainOrSwim(player, { diving: wantDive && diveAir > 0.05 })
       if (player.userData.swimming && !wasSwim) sfx.splash()
+
+      if (player.userData.diving) {
+        diveAir = Math.max(0, diveAir - delta * 0.28)
+        if (diveAir <= 0) {
+          player.userData.diving = false
+          applyTerrainOrSwim(player)
+          setStatus('Out of breath!')
+          setTimeout(() => setStatus(''), 900)
+        } else if (!statusLine.textContent) {
+          setStatus(`Diving… ${Math.round(diveAir * 100)}% air · Space to surface`)
+        }
+      } else if (player.userData.swimming) {
+        diveAir = Math.min(1, diveAir + delta * 0.35)
+      } else {
+        diveAir = 1
+      }
     }
   }
+
+  bubbles.setDiving(!!player.userData.diving, player.position)
 
   updateCharacterAnim(player, moving, running, t, {
     delta,
@@ -998,7 +1266,13 @@ function updatePlayer(delta, t) {
 
   lookAt
     .copy(player.position)
-    .add(new THREE.Vector3(0, swimming ? 0.9 : 1.4, 0))
+    .add(
+      new THREE.Vector3(
+        0,
+        player.userData.diving ? 0.4 : swimming ? 0.9 : 1.4,
+        0,
+      ),
+    )
   controls.target.lerp(lookAt, 1 - Math.exp(-8 * delta))
 }
 
@@ -1133,6 +1407,24 @@ function animate() {
 
   pad.pollPhysical()
 
+  const { night } = dayNight.update(t)
+  if (!characters.luffy.userData.gear5) {
+    renderer.toneMappingExposure = exposureRef.current
+  }
+  updateLanterns(night)
+  weather.update(delta)
+  bubbles.update(delta, getPlayer().position)
+  updateAimZoom(delta)
+  updateBarrelRespawn(t)
+  updateCannonBall(delta)
+
+  if (cookBuff && t > cookBuff.until) {
+    cookBuff = null
+    refreshStats()
+    setStatus('Feast buff faded')
+    setTimeout(() => setStatus(''), 1000)
+  }
+
   if (onShip) updateShip(delta)
   else {
     updatePlayer(delta, t)
@@ -1166,6 +1458,19 @@ function animate() {
       if (!statusLine.textContent) setStatus('Press E to eat meat (+HP)')
     }
 
+    if (
+      cookStation &&
+      getPlayer().position.distanceTo(cookStation.position) < 2.8
+    ) {
+      if (!statusLine.textContent) {
+        setStatus(
+          active === 'sanji'
+            ? 'E: cook All Blue feast (5 Berries)'
+            : 'E: cook at Sanji’s station (3 Berries)',
+        )
+      }
+    }
+
     const cp = nearestClimb(getPlayer())
     if (cp && getPlayer().position.y < cp.topY - 0.5 && !getPlayer().userData.climbing) {
       if (!statusLine.textContent) setStatus('Hold W near structure to climb')
@@ -1180,10 +1485,17 @@ function animate() {
     gearLight.intensity = 2.2 + Math.sin(t * 8) * 0.6
   } else gearLight.intensity = 0
 
-  water.material.opacity = 0.84 + Math.sin(t * 0.7) * 0.04
+  // Water tint: darker when diving / night
+  const dive = getPlayer().userData.diving
+  water.material.opacity = dive ? 0.95 : 0.84 + Math.sin(t * 0.7) * 0.04
+  water.material.color.setHex(dive ? 0x0a3a55 : night > 0.5 ? 0x1565a0 : 0x1e90c8)
+
   if (campFlame) {
     campFlame.scale.y = 0.9 + Math.sin(t * 9) * 0.15
     campFlame.rotation.y = t * 2
+  }
+  if (cookStation?.userData.flame) {
+    cookStation.userData.flame.scale.y = 0.9 + Math.sin(t * 11) * 0.2
   }
   for (const c of clouds) {
     c.position.x += Math.sin(t * 0.04 + c.position.z * 0.01) * 0.003

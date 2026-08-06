@@ -1,21 +1,26 @@
 import * as THREE from 'three'
+import { createBountyPoster, makeCookStation } from './systems.js'
 
 export const WORLD = {
-  size: 320,
+  size: 360,
   segments: 200,
-  sailRadius: 220,
+  sailRadius: 250,
   islands: [
-    { x: 0, z: 0, r: 52, h: 1 },
-    { x: 95, z: -12, r: 32, h: 0.95 },
-    { x: -55, z: 85, r: 26, h: 0.92 },
-    { x: 70, z: 75, r: 22, h: 0.88 },
-    { x: -90, z: -40, r: 28, h: 0.9 },
-    { x: 20, z: -95, r: 24, h: 0.85 },
-    { x: -40, z: -70, r: 18, h: 0.8 },
+    { x: 0, z: 0, r: 52, h: 1, theme: 'grass' },
+    { x: 95, z: -12, r: 32, h: 0.95, theme: 'grass' },
+    { x: -55, z: 85, r: 26, h: 0.92, theme: 'winter' },
+    { x: 70, z: 75, r: 22, h: 0.88, theme: 'grass' },
+    { x: -90, z: -40, r: 28, h: 0.9, theme: 'desert' },
+    { x: 20, z: -95, r: 24, h: 0.85, theme: 'grass' },
+    { x: -40, z: -70, r: 18, h: 0.8, theme: 'grass' },
+    // Unique theme islands
+    { x: 150, z: -55, r: 28, h: 0.9, theme: 'desert' },
+    { x: -130, z: 30, r: 26, h: 0.95, theme: 'winter' },
+    { x: 110, z: 110, r: 22, h: 1.05, theme: 'sky', elevate: 14 },
   ],
 }
 
-function blobHeight(x, z, cx, cz, radius, hScale) {
+function blobHeight(x, z, cx, cz, radius, hScale, elevate = 0) {
   const dist = Math.hypot(x - cx, z - cz)
   const edge = THREE.MathUtils.clamp(1 - dist / radius, 0, 1)
   const falloff = edge * edge * (3 - 2 * edge)
@@ -26,13 +31,29 @@ function blobHeight(x, z, cx, cz, radius, hScale) {
     Math.sin(lx * 0.26 + 1.2) * Math.sin(lz * 0.22) * 0.75 +
     Math.sin((lx + lz) * 0.07) * 0.5
   const plateau = Math.exp(-(lx * lx + lz * lz) * 0.0028) * 0.55
-  return (hills + plateau) * falloff * hScale - (1 - falloff) * 5
+  return (hills + plateau) * falloff * hScale + elevate * falloff - (1 - falloff) * 5
+}
+
+export function nearestIsland(x, z) {
+  let best = WORLD.islands[0]
+  let bestD = Infinity
+  for (const isl of WORLD.islands) {
+    const d = Math.hypot(x - isl.x, z - isl.z) / isl.r
+    if (d < bestD) {
+      bestD = d
+      best = isl
+    }
+  }
+  return best
 }
 
 export function islandHeight(x, z) {
   let best = -5
   for (const isl of WORLD.islands) {
-    best = Math.max(best, blobHeight(x, z, isl.x, isl.z, isl.r, isl.h))
+    best = Math.max(
+      best,
+      blobHeight(x, z, isl.x, isl.z, isl.r, isl.h, isl.elevate || 0),
+    )
   }
   // Sandbar bridges between nearby islands
   const bridges = [
@@ -93,12 +114,19 @@ export function applyTerrainOrSwim(obj, opts = {}) {
   if (land > SWIM_LAND_THRESHOLD) {
     obj.position.y = land
     obj.userData.swimming = false
+    obj.userData.diving = false
+  } else if (opts.diving) {
+    // Brief underwater dive
+    const diveY = WATER_SURFACE - 2.1
+    obj.position.y = diveY
+    obj.userData.swimming = true
+    obj.userData.diving = true
   } else {
-    // Chest/head above water, legs submerged
     obj.position.y = WATER_SURFACE - 0.72
     obj.userData.swimming = true
+    obj.userData.diving = false
   }
-  return { land, swimming: !!obj.userData.swimming }
+  return { land, swimming: !!obj.userData.swimming, diving: !!obj.userData.diving }
 }
 
 /** @deprecated use applyTerrainOrSwim — kept for any leftover imports */
@@ -282,7 +310,14 @@ function makeBerry() {
   )
   coin.rotation.x = Math.PI / 2
   g.add(coin)
-  g.userData = { kind: 'berry', taken: false, spin: Math.random() * Math.PI }
+  g.userData = {
+    kind: 'berry',
+    taken: false,
+    spin: Math.random() * Math.PI,
+    homeX: 0,
+    homeZ: 0,
+    respawnAt: 0,
+  }
   return g
 }
 
@@ -317,7 +352,14 @@ function makeBreakableBarrel(mats) {
     mats.woodDark,
   )
   b.castShadow = true
-  b.userData = { kind: 'barrel', hp: 3, maxHp: 3 }
+  b.userData = {
+    kind: 'barrel',
+    hp: 3,
+    maxHp: 3,
+    homeX: 0,
+    homeZ: 0,
+    respawnAt: 0,
+  }
   return b
 }
 
@@ -433,6 +475,10 @@ export function buildWorld(scene) {
     const cSand = new THREE.Color(0xf5e6b8)
     const cDirt = new THREE.Color(0xc4a574)
     const cRock = new THREE.Color(0x7a7f85)
+    const cDesert = new THREE.Color(0xe0c080)
+    const cSnow = new THREE.Color(0xeef5ff)
+    const cIce = new THREE.Color(0xb3e5fc)
+    const cSky = new THREE.Color(0xc5e1a5)
     const c = new THREE.Color()
 
     for (let i = 0; i < pos.count; i++) {
@@ -440,8 +486,18 @@ export function buildWorld(scene) {
       const z = pos.getZ(i)
       const y = islandHeight(x, z)
       pos.setY(i, y)
+      const theme = nearestIsland(x, z).theme || 'grass'
 
-      if (y < 0.2) c.copy(cSand)
+      if (theme === 'desert') {
+        if (y < 0.25) c.copy(cSand)
+        else c.copy(cDesert).lerp(cSand, Math.min(1, y / 3))
+      } else if (theme === 'winter') {
+        if (y < 0.25) c.copy(cIce)
+        else c.copy(cSnow).lerp(cIce, 0.2)
+      } else if (theme === 'sky') {
+        if (y < 8) c.copy(cSand)
+        else c.copy(cSky).lerp(cBright, 0.35)
+      } else if (y < 0.2) c.copy(cSand)
       else if (y > 2.8) c.copy(cRock)
       else if (y < 0.55) c.copy(cSand).lerp(cDirt, 0.3)
       else c.copy(cGrass).lerp(cBright, (Math.sin(x * 0.35 + z * 0.2) + 1) * 0.25)
@@ -535,10 +591,65 @@ export function buildWorld(scene) {
   }
   scene.add(village)
 
-  const board = makeWantedBoard(mats)
-  place(board, -6, -5)
-  board.rotation.y = 0.5
-  scene.add(board)
+  const bountyBoard = createBountyPoster(mats)
+  place(bountyBoard, -6, -5)
+  bountyBoard.rotation.y = 0.5
+  scene.add(bountyBoard)
+
+  const cookStation = makeCookStation(mats)
+  place(cookStation, -16, -4)
+  cookStation.rotation.y = 0.8
+  scene.add(cookStation)
+
+  // Theme landmarks
+  // Desert dunes markers
+  for (const [x, z] of [
+    [145, -50],
+    [155, -60],
+    [-95, -35],
+  ]) {
+    if (groundY(x, z) < 0.2) continue
+    const dune = new THREE.Mesh(
+      new THREE.ConeGeometry(2.2, 1.4, 7),
+      mat(0xe0c080, { roughness: 1 }),
+    )
+    place(dune, x, z, 0.4)
+    scene.add(dune)
+  }
+  // Winter ice spires
+  for (const [x, z] of [
+    [-125, 28],
+    [-135, 35],
+    [-50, 90],
+  ]) {
+    if (groundY(x, z) < 0.2) continue
+    const spike = new THREE.Mesh(
+      new THREE.ConeGeometry(0.5, 3.5, 5),
+      new THREE.MeshStandardMaterial({
+        color: 0xb3e5fc,
+        transparent: true,
+        opacity: 0.85,
+        roughness: 0.2,
+      }),
+    )
+    place(spike, x, z, 1.5)
+    scene.add(spike)
+  }
+  // Sky island cloud ring
+  {
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(16, 2.2, 8, 24),
+      new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        roughness: 1,
+        transparent: true,
+        opacity: 0.9,
+      }),
+    )
+    ring.rotation.x = Math.PI / 2
+    ring.position.set(110, 12, 110)
+    scene.add(ring)
+  }
 
   // Bridge to east island
   scene.add(makeBridge(mats))
@@ -661,11 +772,19 @@ export function buildWorld(scene) {
     [-30, 40],
     [70, 60],
     [50, -50],
+    [148, -52],
+    [155, -58],
+    [-128, 32],
+    [-135, 25],
+    [108, 108],
+    [115, 112],
   ]
   for (const [x, z] of berrySpots) {
     if (!isWalkable(x, z)) continue
     const berry = makeBerry()
     place(berry, x, z, 0.9)
+    berry.userData.homeX = x
+    berry.userData.homeZ = z
     scene.add(berry)
     berries.push(berry)
   }
@@ -698,9 +817,14 @@ export function buildWorld(scene) {
     [-90, -45],
     [20, -88],
     [70, 70],
+    [150, -55],
+    [-130, 28],
+    [112, 110],
   ]) {
     const barrel = makeBreakableBarrel(mats)
     place(barrel, x, z, 0.5)
+    barrel.userData.homeX = x
+    barrel.userData.homeZ = z
     scene.add(barrel)
     barrels.push(barrel)
   }
@@ -779,6 +903,9 @@ export function buildWorld(scene) {
   // Meat is heal pickup
   meat.userData = { kind: 'meat', taken: false }
 
+  // Climb sky island edge
+  climbPoints.push({ x: 110, z: 110, topY: 16, radius: 3.5 })
+
   return {
     water,
     ship,
@@ -792,6 +919,8 @@ export function buildWorld(scene) {
     climbPoints,
     meat,
     mats,
+    bountyBoard,
+    cookStation,
   }
 }
 
@@ -1227,7 +1356,8 @@ function makeShip(mats) {
   wheel.position.set(0, 2.5, 2.35)
   ship.add(wheel)
 
-  // Lanterns
+  // Lanterns (meshes + real lights for night)
+  const lanternLights = []
   for (const side of [-1, 1]) {
     const lantern = new THREE.Mesh(
       new THREE.SphereGeometry(0.15, 8, 8),
@@ -1239,9 +1369,19 @@ function makeShip(mats) {
     )
     lantern.position.set(side * 2.0, 2.6, 5.5)
     ship.add(lantern)
+    const light = new THREE.PointLight(0xffb74d, 0, 14, 2)
+    light.position.copy(lantern.position)
+    ship.add(light)
+    lanternLights.push({ mesh: lantern, light })
   }
+  // Bow lantern
+  const bowLantern = new THREE.PointLight(0xffcc80, 0, 12, 2)
+  bowLantern.position.set(0, 3.2, -6)
+  ship.add(bowLantern)
+  lanternLights.push({ mesh: null, light: bowLantern })
 
-  // Cannon ports
+  // Working cannons (ports + muzzle anchors)
+  const cannons = []
   for (const side of [-1, 1]) {
     for (const z of [-2.5, 0.5, 2.5]) {
       const port = new THREE.Mesh(
@@ -1251,6 +1391,17 @@ function makeShip(mats) {
       port.position.set(side * 2.62, 0.95, z)
       port.rotation.y = side * -Math.PI / 2
       ship.add(port)
+      const barrel = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.12, 0.14, 0.9, 8),
+        black,
+      )
+      barrel.rotation.z = side * Math.PI / 2
+      barrel.position.set(side * 2.3, 0.95, z)
+      ship.add(barrel)
+      const muzzle = new THREE.Object3D()
+      muzzle.position.set(side * 2.9, 0.95, z)
+      ship.add(muzzle)
+      cannons.push({ muzzle, side })
     }
   }
 
@@ -1282,6 +1433,9 @@ function makeShip(mats) {
     wheel,
     figure,
     speed: 0,
+    lanternLights,
+    cannons,
+    cannonCooldown: 0,
     home: { x: 15.2, z: 16.8, rot: Math.PI + 0.35 },
   }
   return ship

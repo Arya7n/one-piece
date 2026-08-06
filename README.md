@@ -10,9 +10,14 @@ Built with Vite: Gear 5 stretch attacks, sword-slash VFX, collectibles, and a bo
 
 - Play as the full **Straw Hat crew** (Luffy → Jinbe) — switch anytime; others idle on their own islands
 - **Call crew (C)** gathers everyone to you; board Merry with whoever is nearby
-- Expanded multi-island archipelago (7 islands) with village, long bridge, watchtower, and camps
-- Swim, jump, climb, sail **Going Merry**
-- Gear 5, unique attacks, Devil Fruits, berries, chests, barrels, meat HP
+- Large archipelago with **desert, winter, and sky** themed islands
+- Swim, **dive (Ctrl)**, jump, climb, sail **Going Merry**
+- **Ship cannons** (F while sailing) + night **lanterns**
+- **Day / night cycle**
+- Nami **rain & lightning** attack; Usopp **sniper zoom (V / RMB)**
+- Sanji **cook station** (spend Berries for big heals / ATK feast)
+- Rising **wanted bounty** poster; berries & barrels **respawn**
+- Gear 5, unique attacks, Devil Fruits, chests, meat HP
 - Zoro occasionally wanders off on his own
 - Mobile virtual gamepad + HTML5 gamepad support
 - Synthesized SFX (no audio files needed)
@@ -24,10 +29,12 @@ Built with Vite: Gear 5 stretch attacks, sword-slash VFX, collectibles, and a bo
 | `WASD` | Move / sail |
 | `Shift` | Run (on land) |
 | `Space` | Jump / leap off climb |
-| `F` | Attack |
+| `F` | Attack / fire ship cannons |
+| `V` / RMB | Usopp sniper aim (hold) |
+| `Ctrl` | Dive underwater (while swimming) |
 | `C` | Call all crew to you |
 | `G` | Toggle Gear 5 (Luffy) |
-| `E` | Board ship / open chests / eat meat |
+| `E` | Board / cook / chests / meat |
 | `H` | Recall Going Merry to the pier |
 | `1`–`0` | Switch crew member |
 | `[` `]` or `Q` `.` | Cycle crew |
@@ -65,6 +72,7 @@ src/
   world.js        # islands, props, collectibles, Going Merry
   audio.js        # Web Audio SFX
   gamepad.js      # mobile + physical gamepad
+  systems.js      # weather, day/night, bubbles, bounty, cook
   style.css       # HUD + touch pad styles
 ```
 

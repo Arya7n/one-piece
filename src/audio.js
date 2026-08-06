@@ -109,4 +109,17 @@ export const sfx = {
     beep({ freq: 400, dur: 0.1, type: 'sine', gain: 0.05, slide: 200 })
     setTimeout(() => beep({ freq: 600, dur: 0.12, type: 'sine', gain: 0.05 }), 70)
   },
+  thunder() {
+    noiseBurst({ dur: 0.35, gain: 0.12, filterFreq: 180 })
+    beep({ freq: 60, dur: 0.3, type: 'sawtooth', gain: 0.08, slide: -30 })
+  },
+  cannon() {
+    noiseBurst({ dur: 0.22, gain: 0.14, filterFreq: 280 })
+    beep({ freq: 70, dur: 0.18, type: 'square', gain: 0.09, slide: -40 })
+  },
+  cook() {
+    beep({ freq: 320, dur: 0.1, type: 'triangle', gain: 0.05, slide: 120 })
+    setTimeout(() => beep({ freq: 480, dur: 0.12, type: 'sine', gain: 0.05 }), 80)
+    setTimeout(() => beep({ freq: 640, dur: 0.14, type: 'sine', gain: 0.05 }), 160)
+  },
 }
