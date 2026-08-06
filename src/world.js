@@ -537,19 +537,7 @@ export function buildWorld(scene) {
   terrain.receiveShadow = true
   scene.add(terrain)
 
-  const water = new THREE.Mesh(
-    new THREE.CircleGeometry(250, 96),
-    new THREE.MeshStandardMaterial({
-      color: 0x1e90c8,
-      roughness: 0.2,
-      metalness: 0.25,
-      transparent: true,
-      opacity: 0.88,
-    }),
-  )
-  water.rotation.x = -Math.PI / 2
-  water.position.y = 0.02
-  scene.add(water)
+  // Water mesh is created in main via createOceanWater()
 
   // Palms
   const palmSpots = [
@@ -1011,7 +999,6 @@ export function buildWorld(scene) {
   }
 
   return {
-    water,
     ship,
     flagPole,
     campFlame: flame,

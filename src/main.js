@@ -35,8 +35,10 @@ import {
   createCannonBall,
 } from './systems.js'
 import { createQuestSystem } from './gameui.js'
+import { createOceanWater, sampleWaveHeight } from './water.js'
 import { sfx } from './audio.js'
 import { createMobileGamepad } from './gamepad.js'
+import { createIntro, syncOrbitFromCamera } from './intro.js'
 
 const canvas = document.querySelector('#canvas')
 
@@ -83,11 +85,17 @@ const moveDir = new THREE.Vector3()
 const camForward = new THREE.Vector3()
 const camRight = new THREE.Vector3()
 const lookAt = new THREE.Vector3()
+const smoothLookAt = new THREE.Vector3()
 const followTarget = new THREE.Vector3()
 const shipForward = new THREE.Vector3()
 const tmp = new THREE.Vector3()
 const attackOrigin = new THREE.Vector3()
 const desiredCam = new THREE.Vector3()
+const playerVel = new THREE.Vector3()
+const spectateVel = new THREE.Vector3()
+let shipTurnVel = 0
+let moveFacing = 0
+let moveFacingInit = false
 
 // Third-person follow camera (mouse drag orbits; locked behind target)
 let camYaw = Math.PI
@@ -101,6 +109,9 @@ const camPointers = new Map()
 let pinchStartDist = 0
 let pinchStartCamDist = 9
 let pinching = false
+
+/** Opening fly-through tour (skippable) */
+let intro = null
 
 // --- Scene ---
 const scene = new THREE.Scene()
@@ -188,7 +199,6 @@ scene.add(new THREE.Mesh(new THREE.SphereGeometry(280, 32, 16), skyMat))
 const world = buildWorld(scene)
 const {
   ship,
-  water,
   flagPole,
   campFlame,
   clouds,
@@ -203,6 +213,10 @@ const {
   bossBarrier,
   seaKing,
 } = world
+
+const ocean = createOceanWater()
+scene.add(ocean.mesh)
+const sunDir = new THREE.Vector3()
 
 const weather = createWeatherSystem(scene)
 const dayNight = createDayNight({
@@ -470,6 +484,9 @@ function setActive(name) {
   if (!characters[name]) return
   active = name
   characters[name].userData.gathering = false
+  playerVel.set(0, 0, 0)
+  moveFacing = characters[name].rotation.y
+  moveFacingInit = true
   // Keep orbit yaw; camera already sits behind look direction
   sfx.switch()
   refreshActiveLabel()
@@ -902,18 +919,25 @@ function enforceBossLock(obj) {
   }
 }
 
-/** Third-person follow: orbit yaw/pitch from drag only (no auto-spin). */
+function shortestAngle(from, to) {
+  let d = to - from
+  while (d > Math.PI) d -= Math.PI * 2
+  while (d < -Math.PI) d += Math.PI * 2
+  return d
+}
+
+/** Third-person follow with soft position + look smoothing. */
 function updateFollowCamera(target, delta, lookHeight = 1.4) {
   const cosP = Math.cos(camPitch)
-  // Camera sits opposite look direction so character faces away from lens
   desiredCam.set(
     target.x + Math.sin(camYaw) * camDist * cosP,
     target.y + Math.sin(camPitch) * camDist + 1.2,
     target.z + Math.cos(camYaw) * camDist * cosP,
   )
-  camera.position.lerp(desiredCam, 1 - Math.exp(-14 * delta))
+  camera.position.lerp(desiredCam, 1 - Math.exp(-8 * delta))
   lookAt.set(target.x, target.y + lookHeight, target.z)
-  camera.lookAt(lookAt)
+  smoothLookAt.lerp(lookAt, 1 - Math.exp(-10 * delta))
+  camera.lookAt(smoothLookAt)
 }
 
 function fireShipCannon() {
@@ -1242,6 +1266,7 @@ const pad = createMobileGamepad({
 
 // Input
 window.addEventListener('keydown', (e) => {
+  if (intro?.isActive) return
   sfx.unlock()
   const k = e.key.toLowerCase()
   if (k in keys) keys[k] = true
@@ -1339,6 +1364,7 @@ function endCamPointer(e) {
 
 // Third-person look + pinch zoom on canvas
 canvas.addEventListener('pointerdown', (e) => {
+  if (intro?.isActive) return
   if (e.pointerType === 'mouse' && e.button !== 0) return
   if (e.target !== canvas) return
   camPointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
@@ -1429,7 +1455,7 @@ function updateSpectator(delta) {
   // Orbit a watched crewmate, or free-fly the look pivot
   if (spectateFollowId && characters[spectateFollowId]) {
     characters[spectateFollowId].getWorldPosition(tmp)
-    spectateFocus.lerp(tmp, 1 - Math.exp(-6 * delta))
+    spectateFocus.lerp(tmp, 1 - Math.exp(-5 * delta))
   }
 
   camForward.set(-Math.sin(camYaw), 0, -Math.cos(camYaw))
@@ -1445,22 +1471,35 @@ function updateSpectator(delta) {
   }
 
   const fast = keys.shift || padRun || pad.state.run || pad.state.physRun
-  const speed = (fast ? 28 : 14) * delta
+  const maxSpeed = fast ? 28 : 14
+  const accel = 22
 
   if (moveDir.lengthSq() > 1e-6) {
     moveDir.normalize()
-    spectateFocus.x += moveDir.x * speed
-    spectateFocus.z += moveDir.z * speed
-    // Manual fly breaks character follow until [/] again
+    spectateVel.x += moveDir.x * accel * delta
+    spectateVel.z += moveDir.z * accel * delta
     if (spectateFollowId) {
       spectateFollowId = null
       refreshActiveLabel()
       refreshCrewStrip()
     }
+  } else {
+    spectateVel.x *= Math.exp(-5 * delta)
+    spectateVel.z *= Math.exp(-5 * delta)
   }
 
-  if (keys.space) spectateFocus.y += speed * 0.85
-  if (keys.control) spectateFocus.y -= speed * 0.85
+  const hSpeed = Math.hypot(spectateVel.x, spectateVel.z)
+  if (hSpeed > maxSpeed) {
+    const s = maxSpeed / hSpeed
+    spectateVel.x *= s
+    spectateVel.z *= s
+  }
+
+  spectateFocus.x += spectateVel.x * delta
+  spectateFocus.z += spectateVel.z * delta
+
+  if (keys.space) spectateFocus.y += maxSpeed * 0.7 * delta
+  if (keys.control) spectateFocus.y -= maxSpeed * 0.7 * delta
 
   // Soft world bounds
   const r = Math.hypot(spectateFocus.x, spectateFocus.z)
@@ -1476,29 +1515,42 @@ function updateSpectator(delta) {
 
 function updateShip(delta) {
   const data = ship.userData
+  const t = clock.elapsedTime
   const mx = keys.w || pad.state.y > 0.3
   const ms = keys.s || pad.state.y < -0.3
   const ma = keys.a || pad.state.x < -0.3
   const md = keys.d || pad.state.x > 0.3
 
-  if (mx) data.speed = Math.min(16, data.speed + 10 * delta)
-  else if (ms) data.speed = Math.max(-7, data.speed - 10 * delta)
-  else data.speed *= 1 - 1.5 * delta
+  const targetSpeed = mx ? 15 : ms ? -6.5 : 0
+  data.speed += (targetSpeed - data.speed) * (1 - Math.exp(-(mx || ms ? 2.2 : 3.5) * delta))
 
-  if (ma) ship.rotation.y += 1.05 * delta
-  if (md) ship.rotation.y -= 1.05 * delta
+  const turnTarget = (ma ? 1 : 0) + (md ? -1 : 0)
+  shipTurnVel += (turnTarget * 1.05 - shipTurnVel) * (1 - Math.exp(-6 * delta))
+  ship.rotation.y += shipTurnVel * delta
 
   // Merry's bow is local -Z (stern is +Z), so sail along -Z
   shipForward.set(-Math.sin(ship.rotation.y), 0, -Math.cos(ship.rotation.y))
   ship.position.addScaledVector(shipForward, data.speed * delta)
 
-  ship.position.y = 0.2 + Math.sin(clock.elapsedTime * 1.4) * 0.08
-  ship.rotation.z = Math.sin(clock.elapsedTime * 1.1) * 0.03
-  ship.rotation.x = Math.sin(clock.elapsedTime * 0.9) * 0.02
+  const waveY = sampleWaveHeight(ship.position.x, ship.position.z, t)
+  const waveYaw = sampleWaveHeight(ship.position.x + 1.2, ship.position.z, t)
+  const waveRoll = sampleWaveHeight(ship.position.x, ship.position.z + 1.2, t)
+  ship.position.y = 0.18 + waveY * 0.85
+  ship.rotation.z = THREE.MathUtils.lerp(
+    ship.rotation.z,
+    (waveRoll - waveY) * 0.35 + Math.sin(t * 0.9) * 0.015,
+    1 - Math.exp(-4 * delta),
+  )
+  ship.rotation.x = THREE.MathUtils.lerp(
+    ship.rotation.x,
+    (waveYaw - waveY) * 0.28 + Math.sin(t * 0.7) * 0.012,
+    1 - Math.exp(-4 * delta),
+  )
 
   const r = Math.hypot(ship.position.x, ship.position.z)
   if (r > WORLD.sailRadius) {
-    ship.position.multiplyScalar(WORLD.sailRadius / r)
+    ship.position.x *= WORLD.sailRadius / r
+    ship.position.z *= WORLD.sailRadius / r
     data.speed *= -0.35
   }
 
@@ -1511,7 +1563,6 @@ function updateShip(delta) {
 
   if (data.cannonCooldown > 0) data.cannonCooldown -= delta
 
-  const t = clock.elapsedTime
   for (const id of aboard) {
     updateCharacterAnim(characters[id], false, false, t, {
       delta,
@@ -1581,7 +1632,7 @@ function updatePlayer(delta, t) {
     // Devil fruit weakness — except Jinbe
     base *= active === 'jinbe' ? 0.7 : fruitBuff ? 0.25 : 0.55
   }
-  const speed = running ? base * 2.1 : base
+  const maxSpeed = running ? base * 2.1 : base
 
   const busy =
     (player.userData.punchT ?? -1) >= 0 ||
@@ -1592,11 +1643,35 @@ function updatePlayer(delta, t) {
 
   if (moving && !busy && !player.userData.climbing) {
     moveDir.normalize()
-    player.position.x += moveDir.x * speed * delta
-    player.position.z += moveDir.z * speed * delta
-    player.rotation.y = Math.atan2(moveDir.x, moveDir.z)
+    const accel = running ? 28 : 18
+    playerVel.x += moveDir.x * accel * delta
+    playerVel.z += moveDir.z * accel * delta
+    const targetYaw = Math.atan2(moveDir.x, moveDir.z)
+    if (!moveFacingInit) {
+      moveFacing = targetYaw
+      moveFacingInit = true
+    }
+    moveFacing += shortestAngle(moveFacing, targetYaw) * (1 - Math.exp(-12 * delta))
+    player.rotation.y = moveFacing
+  } else {
+    const damp = swimming ? 4.5 : 10
+    playerVel.x *= Math.exp(-damp * delta)
+    playerVel.z *= Math.exp(-damp * delta)
   }
 
+  const spd = Math.hypot(playerVel.x, playerVel.z)
+  if (spd > maxSpeed) {
+    const s = maxSpeed / spd
+    playerVel.x *= s
+    playerVel.z *= s
+  }
+
+  if (!busy && !player.userData.climbing && spd > 0.02) {
+    player.position.x += playerVel.x * delta
+    player.position.z += playerVel.z * delta
+  }
+
+  const actuallyMoving = spd > 0.35 && !player.userData.climbing
   enforceBossLock(player)
 
   // Jump physics
@@ -1642,7 +1717,7 @@ function updatePlayer(delta, t) {
 
   bubbles.setDiving(!!player.userData.diving, player.position)
 
-  updateCharacterAnim(player, moving, running, t, {
+  updateCharacterAnim(player, actuallyMoving, running && actuallyMoving, t, {
     delta,
     swimming: player.userData.swimming,
     climbing: player.userData.climbing,
@@ -1660,8 +1735,7 @@ function updateIdleCrew(delta, t) {
   let stillGathering = false
 
   for (const id of CREW_ORDER) {
-    // In spectator mode every crewmate idles / wanders
-    if (!spectating && id === active) continue
+    if (!intro?.isActive && id === active) continue
     if (aboard.has(id)) continue
     const buddy = characters[id]
 
@@ -1780,6 +1854,14 @@ function updateSlashVfx(delta) {
   }
 }
 
+function updateIntroAmbient(delta, t) {
+  const wy = sampleWaveHeight(ship.position.x, ship.position.z, t)
+  ship.position.y = 0.18 + wy * 0.85
+  ship.rotation.z = Math.sin(t * 0.9) * 0.02
+  ship.rotation.x = Math.sin(t * 0.7) * 0.015
+  updateIdleCrew(delta, t)
+}
+
 function animate() {
   requestAnimationFrame(animate)
   const delta = Math.min(clock.getDelta(), 0.05)
@@ -1805,13 +1887,39 @@ function animate() {
     setTimeout(() => setStatus(''), 1000)
   }
 
+  if (intro?.isActive) {
+    intro.update(delta)
+    updateIntroAmbient(delta, t)
+    updateSlashVfx(delta)
+    for (const c of clouds) {
+      c.position.x += Math.sin(t * 0.04 + c.position.z * 0.01) * 0.003
+    }
+    flagPole.children[1].rotation.y = Math.sin(t * 2) * 0.15
+    if (ship.userData.sail) {
+      ship.userData.sail.rotation.y = Math.sin(t * 1.3) * 0.04
+      ship.userData.sail.scale.x = 1 + Math.sin(t * 1.6) * 0.02
+    }
+    if (ship.userData.topSail) {
+      ship.userData.topSail.rotation.y = Math.sin(t * 1.5 + 1) * 0.05
+    }
+    if (ship.userData.wheel) {
+      ship.userData.wheel.rotation.z = Math.sin(t * 0.4) * 0.15
+    }
+    sunDir.copy(sun.position).normalize()
+    ocean.update(t, { night, dive: false, sunDir })
+    if (bloomEnabled) composer.render()
+    else renderer.render(scene, camera)
+    return
+  }
+
   if (spectating) {
-    // Freeze sailing input; keep light deck bob if already aboard
+    // Freeze sailing input; keep wave bob if already aboard
     if (onShip) {
       ship.userData.speed = 0
-      ship.position.y = 0.2 + Math.sin(t * 1.4) * 0.08
-      ship.rotation.z = Math.sin(t * 1.1) * 0.03
-      ship.rotation.x = Math.sin(t * 0.9) * 0.02
+      const wy = sampleWaveHeight(ship.position.x, ship.position.z, t)
+      ship.position.y = 0.18 + wy * 0.85
+      ship.rotation.z = Math.sin(t * 0.9) * 0.02
+      ship.rotation.x = Math.sin(t * 0.7) * 0.015
       ship.updateMatrixWorld(true)
       for (const id of aboard) {
         updateCharacterAnim(characters[id], false, false, t, {
@@ -1886,10 +1994,10 @@ function animate() {
     gearLight.intensity = 2.2 + Math.sin(t * 8) * 0.6
   } else gearLight.intensity = 0
 
-  // Water tint: darker when diving / night
+  // Animated ocean waves + lighting response
   const dive = !spectating && getPlayer().userData.diving
-  water.material.opacity = dive ? 0.95 : 0.84 + Math.sin(t * 0.7) * 0.04
-  water.material.color.setHex(dive ? 0x0a3a55 : night > 0.5 ? 0x1565a0 : 0x1e90c8)
+  sunDir.copy(sun.position).normalize()
+  ocean.update(t, { night, dive, sunDir })
 
   if (campFlame) {
     campFlame.scale.y = 0.9 + Math.sin(t * 9) * 0.15
@@ -1927,4 +2035,27 @@ function animate() {
 refreshStats()
 refreshCrewStrip()
 quest.onChestOpened(chestsOpened) // sync UI
+
+intro = createIntro({
+  camera,
+  ship,
+  getPlayer,
+  onSkip: () => sfx.unlock(),
+  onComplete() {
+    const p = getPlayer()
+    const orbit = syncOrbitFromCamera(camera, p.position)
+    camYaw = orbit.camYaw
+    camPitch = orbit.camPitch
+    camDist = orbit.camDist
+    smoothLookAt.copy(orbit.smoothLookAt)
+    moveFacing = p.rotation.y
+    moveFacingInit = true
+    playerVel.set(0, 0, 0)
+    sfx.unlock()
+    setStatus('Welcome aboard — explore the archipelago!')
+    setTimeout(() => setStatus(''), 2400)
+    intro = null
+  },
+})
+
 animate()
