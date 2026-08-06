@@ -42,7 +42,7 @@ Built with Vite: Gear 5 stretch attacks, sword-slash VFX, collectibles, and a bo
 | `1`–`0` | Switch crew member |
 | `[` `]` or `Q` `.` | Cycle crew |
 | Hold `W` near tower/flag | Climb |
-| `B` | Toggle bloom |
+| `B` | Toggle bloom / color grading |
 | `P` / Spec | Spectator free-cam (no character control) |
 | Drag | Orbit camera |
 

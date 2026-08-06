@@ -59,7 +59,7 @@ let spectating = false
 const spectateFocus = new THREE.Vector3()
 /** Optional crew id to orbit while spectating (null = free fly) */
 let spectateFollowId = null
-let bloomEnabled = true
+let bloomEnabled = false
 let onShip = false
 let boardHintShown = false
 let berryCount = 0
@@ -163,6 +163,7 @@ const bloomPass = new UnrealBloomPass(
   0.75,
 )
 composer.addPass(bloomPass)
+bloomPass.enabled = bloomEnabled
 
 // Sky
 const skyMat = new THREE.ShaderMaterial({
