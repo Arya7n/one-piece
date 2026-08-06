@@ -11,6 +11,7 @@ export function createMobileGamepad({
   onCycleChar,
   onRun,
   onCall,
+  onSpectate,
 }) {
   const state = {
     x: 0,
@@ -34,6 +35,7 @@ export function createMobileGamepad({
       <button type="button" data-act="run" class="pad-btn pad-run">R</button>
       <button type="button" data-act="cycle" class="pad-btn pad-cycle">⇄</button>
       <button type="button" data-act="call" class="pad-btn pad-call">📣</button>
+      <button type="button" data-act="spectate" class="pad-btn pad-spec">👁</button>
     </div>
   `
   document.body.appendChild(root)
@@ -112,6 +114,7 @@ export function createMobileGamepad({
         if (act === 'gear') onGear?.()
         if (act === 'cycle') onCycleChar?.()
         if (act === 'call') onCall?.()
+        if (act === 'spectate') onSpectate?.()
         if (act === 'run') {
           state.run = true
           btn.classList.add('pad-held')

@@ -29,7 +29,7 @@ Built with Vite: Gear 5 stretch attacks, sword-slash VFX, collectibles, and a bo
 | Key | Action |
 |-----|--------|
 | `WASD` | Move / sail |
-| Drag / Scroll | Look / zoom camera |
+| Drag / Scroll / Pinch | Look / zoom camera |
 | `Shift` | Run (on land) |
 | `Space` | Jump / leap off climb |
 | `F` | Attack / fire ship cannons |
@@ -43,9 +43,12 @@ Built with Vite: Gear 5 stretch attacks, sword-slash VFX, collectibles, and a bo
 | `[` `]` or `Q` `.` | Cycle crew |
 | Hold `W` near tower/flag | Climb |
 | `B` | Toggle bloom |
+| `P` / Spec | Spectator free-cam (no character control) |
 | Drag | Orbit camera |
 
-On touch / narrow screens a virtual stick + buttons appear (A attack, J jump, E interact, G Gear 5, R run, ⇄ cycle).
+**Spectator:** WASD fly, Space/Ctrl up-down, drag/pinch look-zoom, `[` `]` watch a crewmate, number keys or Spec again to return to play.
+
+On touch / narrow screens a virtual stick + buttons appear (A attack, J jump, E interact, G Gear 5, R run, ⇄ cycle, 👁 spectator).
 
 ## Getting started
 

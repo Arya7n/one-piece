@@ -48,9 +48,15 @@ const keys = {
   shift: false,
   v: false,
   control: false,
+  space: false,
 }
 
 let active = 'luffy'
+/** Free camera — no character control */
+let spectating = false
+const spectateFocus = new THREE.Vector3()
+/** Optional crew id to orbit while spectating (null = free fly) */
+let spectateFollowId = null
 let bloomEnabled = true
 let onShip = false
 let boardHintShown = false
@@ -90,6 +96,11 @@ let camDist = 9
 let camDragging = false
 let camLastX = 0
 let camLastY = 0
+/** Active canvas pointers for orbit + pinch-zoom */
+const camPointers = new Map()
+let pinchStartDist = 0
+let pinchStartCamDist = 9
+let pinching = false
 
 // --- Scene ---
 const scene = new THREE.Scene()
@@ -213,6 +224,7 @@ hudRoot.innerHTML = `
     <em id="active-char">Playing: Luffy</em>
     <span id="berry-count-mini">Berry: 0</span>
     <span id="hp-count-mini">HP: 100</span>
+    <button type="button" id="hud-spectate" title="Spectator mode (P)">Spec</button>
     <button type="button" id="hud-open" aria-expanded="false" aria-controls="hud-hint">Info</button>
     <em id="status-line"></em>
   </div>
@@ -221,7 +233,7 @@ hudRoot.innerHTML = `
       <strong>Grand Line Archipelago</strong>
       <button type="button" id="hud-close" aria-label="Close info">×</button>
     </div>
-    <span>WASD · Drag look · Space jump · F attack · V aim · Ctrl dive · C call · E interact · H recall</span>
+    <span>WASD · Drag look · Pinch/Scroll zoom · Space jump · F attack · V aim · Ctrl dive · C call · E interact · H recall · P spectator</span>
     <em id="quest-hint-line">Quest: open 3 chests to unlock Boss Island</em>
     <em id="active-char-panel">Playing: Luffy</em>
     <div id="hud-stats">
@@ -284,6 +296,7 @@ const quest = createQuestSystem({
 
 const hint = hudRoot.querySelector('#hud-hint')
 const hudOpenBtn = hudRoot.querySelector('#hud-open')
+const hudSpectateBtn = hudRoot.querySelector('#hud-spectate')
 const hudCloseBtn = hudRoot.querySelector('#hud-close')
 const activeLabel = hudRoot.querySelector('#active-char')
 const activeLabelPanel = hudRoot.querySelector('#active-char-panel')
@@ -308,6 +321,10 @@ function setHudOpen(open) {
 hudOpenBtn.addEventListener('click', (e) => {
   e.stopPropagation()
   setHudOpen(hint.hidden)
+})
+hudSpectateBtn.addEventListener('click', (e) => {
+  e.stopPropagation()
+  toggleSpectator()
 })
 hudCloseBtn.addEventListener('click', (e) => {
   e.stopPropagation()
@@ -407,15 +424,32 @@ crewStrip.innerHTML =
     (id, i) =>
       `<button type="button" class="crew-chip" data-id="${id}">${i + 1 <= 9 ? i + 1 : '0'}.${characters[id].userData.displayName}</button>`,
   ).join('') +
-  `<button type="button" class="crew-chip crew-call" id="call-crew" title="Call all crew (C)">📣 Call</button>`
+  `<button type="button" class="crew-chip crew-call" id="call-crew" title="Call all crew (C)">📣 Call</button>` +
+  `<button type="button" class="crew-chip crew-spec" id="crew-spectate" title="Spectator (P)">👁 Spec</button>`
 crewStrip.addEventListener('click', (e) => {
   const call = e.target.closest('#call-crew')
   if (call) {
     callCrew()
     return
   }
+  if (e.target.closest('#crew-spectate')) {
+    toggleSpectator()
+    return
+  }
   const btn = e.target.closest('[data-id]')
-  if (btn) setActive(btn.dataset.id)
+  if (btn) {
+    if (spectating) {
+      // Focus that crewmate in spectator (don't take control)
+      spectateFollowId = btn.dataset.id
+      characters[spectateFollowId].getWorldPosition(spectateFocus)
+      refreshActiveLabel()
+      refreshCrewStrip()
+      setStatus(`Watching ${characters[spectateFollowId].userData.displayName} · P exit · WASD free fly`)
+      setTimeout(() => setStatus(''), 1600)
+      return
+    }
+    setActive(btn.dataset.id)
+  }
 })
 
 const slashVfx = createSlashVfx()
@@ -424,6 +458,7 @@ const pellet = createPelletVfx()
 scene.add(pellet)
 
 function setActive(name) {
+  if (spectating) exitSpectator()
   if (onShip) {
     // Can only switch among crew currently aboard
     if (!aboard.has(name)) {
@@ -441,7 +476,64 @@ function setActive(name) {
   refreshCrewStrip()
 }
 
+function enterSpectator() {
+  spectating = true
+  spectateFollowId = null
+  aiming = false
+  keys.v = false
+  if (onShip) {
+    getPlayer().getWorldPosition(spectateFocus)
+  } else {
+    spectateFocus.copy(getPlayer().position)
+  }
+  camDist = THREE.MathUtils.clamp(Math.max(camDist, 14), 4, 48)
+  camPitch = THREE.MathUtils.clamp(camPitch, 0.12, 1.35)
+  document.body.classList.add('spectating')
+  sfx.switch()
+  refreshActiveLabel()
+  refreshCrewStrip()
+  setStatus('Spectator — drag look · pinch zoom · WASD fly · [/] watch crew · P play')
+  setTimeout(() => setStatus(''), 2800)
+}
+
+function exitSpectator() {
+  if (!spectating) return
+  spectating = false
+  spectateFollowId = null
+  camDist = THREE.MathUtils.clamp(camDist, 4, 22)
+  document.body.classList.remove('spectating')
+  refreshActiveLabel()
+  refreshCrewStrip()
+}
+
+function toggleSpectator() {
+  if (spectating) {
+    exitSpectator()
+    setStatus(`Back to ${characters[active].userData.displayName}`)
+    setTimeout(() => setStatus(''), 1200)
+  } else {
+    enterSpectator()
+  }
+}
+
 function cycleCrew(dir = 1) {
+  if (spectating) {
+    const list = CREW_ORDER
+    const cur = spectateFollowId ? list.indexOf(spectateFollowId) : -1
+    const idx =
+      cur < 0
+        ? dir > 0
+          ? 0
+          : list.length - 1
+        : (cur + dir + list.length) % list.length
+    spectateFollowId = list[idx]
+    characters[spectateFollowId].getWorldPosition(spectateFocus)
+    refreshActiveLabel()
+    refreshCrewStrip()
+    setStatus(`Watching ${characters[spectateFollowId].userData.displayName}`)
+    setTimeout(() => setStatus(''), 1200)
+    return
+  }
   if (onShip) return
   const i = CREW_ORDER.indexOf(active)
   const next = CREW_ORDER[(i + dir + CREW_ORDER.length) % CREW_ORDER.length]
@@ -450,11 +542,28 @@ function cycleCrew(dir = 1) {
 
 function refreshCrewStrip() {
   crewStrip.querySelectorAll('.crew-chip').forEach((el) => {
-    el.classList.toggle('crew-active', el.dataset.id === active)
+    const id = el.dataset.id
+    if (!id) {
+      el.classList.toggle('crew-active', el.id === 'crew-spectate' && spectating)
+      return
+    }
+    const focused = spectating
+      ? id === spectateFollowId
+      : id === active
+    el.classList.toggle('crew-active', focused)
   })
 }
 
 function refreshActiveLabel() {
+  if (spectating) {
+    const who = spectateFollowId
+      ? characters[spectateFollowId].userData.displayName
+      : 'free cam'
+    const text = `Spectator · ${who}`
+    activeLabel.textContent = text
+    if (activeLabelPanel) activeLabelPanel.textContent = text
+    return
+  }
   const gear = characters.luffy.userData.gear5 ? ' · GEAR 5!' : ''
   const shipTag = onShip ? ' · On Merry' : ''
   const lost =
@@ -473,6 +582,11 @@ function getFollowers() {
 }
 
 function callCrew() {
+  if (spectating) {
+    setStatus('Exit spectator (P) to call the crew')
+    setTimeout(() => setStatus(''), 1200)
+    return
+  }
   if (onShip) {
     setStatus('Leave the ship to call the crew')
     return
@@ -521,6 +635,7 @@ function nearestClimb(player) {
 }
 
 function recallShipHome() {
+  if (spectating) return
   if (onShip) {
     setStatus('Leave the ship first (E), then recall')
     return
@@ -666,6 +781,7 @@ function tryCook() {
 
 function tryInteract() {
   sfx.unlock()
+  if (spectating) return
   if (onShip) {
     tryBoardToggle()
     return
@@ -829,6 +945,7 @@ function fireShipCannon() {
 
 function doAttack() {
   sfx.unlock()
+  if (spectating) return
   if (onShip) {
     fireShipCannon()
     return
@@ -924,7 +1041,7 @@ function doAttack() {
 }
 
 function tryJump() {
-  if (onShip) return
+  if (spectating || onShip) return
   const player = getPlayer()
   if (player.userData.diving) {
     // Surface from dive
@@ -949,6 +1066,7 @@ function tryJump() {
 }
 
 function toggleGear5() {
+  if (spectating) return
   if (active !== 'luffy' && !characters.luffy.userData.gear5) {
     setStatus('Switch to Luffy for Gear 5')
     return
@@ -1099,11 +1217,24 @@ function updateLanterns(night) {
 // Mobile pad
 const pad = createMobileGamepad({
   onAttack: () => doAttack(),
-  onInteract: () => tryInteract(),
-  onJump: () => tryJump(),
+  onInteract: () => {
+    if (spectating) {
+      spectateFocus.y -= 2.5
+      return
+    }
+    tryInteract()
+  },
+  onJump: () => {
+    if (spectating) {
+      spectateFocus.y += 2.5
+      return
+    }
+    tryJump()
+  },
   onGear: () => toggleGear5(),
   onCycleChar: () => cycleCrew(1),
   onCall: () => callCrew(),
+  onSpectate: () => toggleSpectator(),
   onRun: (v) => {
     padRun = v
   },
@@ -1114,9 +1245,31 @@ window.addEventListener('keydown', (e) => {
   sfx.unlock()
   const k = e.key.toLowerCase()
   if (k in keys) keys[k] = true
+  if (e.code === 'Space') keys.space = true
   if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys.shift = true
   if (e.code === 'ControlLeft' || e.code === 'ControlRight') keys.control = true
   if (e.repeat) return
+  if (k === 'p') {
+    toggleSpectator()
+    return
+  }
+  if (spectating) {
+    // Numbers take control of that character; [/] cycle watch focus
+    if (k === '1') setActive('luffy')
+    if (k === '2') setActive('zoro')
+    if (k === '3') setActive('nami')
+    if (k === '4') setActive('usopp')
+    if (k === '5') setActive('sanji')
+    if (k === '6') setActive('chopper')
+    if (k === '7') setActive('robin')
+    if (k === '8') setActive('franky')
+    if (k === '9') setActive('brook')
+    if (k === '0') setActive('jinbe')
+    if (k === ']' || k === '.') cycleCrew(1)
+    if (k === '[' || k === ',' || k === 'q') cycleCrew(-1)
+    if (e.code === 'Space') e.preventDefault()
+    return
+  }
   if (k === '1') setActive('luffy')
   if (k === '2') setActive('zoro')
   if (k === '3') setActive('nami')
@@ -1150,6 +1303,7 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keyup', (e) => {
   const k = e.key.toLowerCase()
   if (k in keys) keys[k] = false
+  if (e.code === 'Space') keys.space = false
   if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys.shift = false
   if (e.code === 'ControlLeft' || e.code === 'ControlRight') keys.control = false
 })
@@ -1163,17 +1317,69 @@ window.addEventListener('contextmenu', (e) => {
   if (active === 'usopp') e.preventDefault()
 })
 
-// Third-person look — drag on canvas
+function camPointerDist(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y)
+}
+
+function endCamPointer(e) {
+  camPointers.delete(e.pointerId)
+  if (camPointers.size < 2) {
+    pinching = false
+    pinchStartDist = 0
+  }
+  if (camPointers.size === 1) {
+    const only = camPointers.values().next().value
+    camDragging = true
+    camLastX = only.x
+    camLastY = only.y
+  } else if (camPointers.size === 0) {
+    camDragging = false
+  }
+}
+
+// Third-person look + pinch zoom on canvas
 canvas.addEventListener('pointerdown', (e) => {
-  if (e.button !== 0) return
+  if (e.pointerType === 'mouse' && e.button !== 0) return
   if (e.target !== canvas) return
-  camDragging = true
-  camLastX = e.clientX
-  camLastY = e.clientY
-  canvas.setPointerCapture(e.pointerId)
+  camPointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+  try {
+    canvas.setPointerCapture(e.pointerId)
+  } catch {
+    /* ignore */
+  }
+  if (camPointers.size >= 2) {
+    camDragging = false
+    pinching = true
+    const pts = [...camPointers.values()]
+    pinchStartDist = camPointerDist(pts[0], pts[1])
+    pinchStartCamDist = camDist
+  } else {
+    camDragging = true
+    camLastX = e.clientX
+    camLastY = e.clientY
+  }
 })
 canvas.addEventListener('pointermove', (e) => {
-  if (!camDragging) return
+  if (!camPointers.has(e.pointerId)) return
+  camPointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+
+  if (camPointers.size >= 2) {
+    const pts = [...camPointers.values()]
+    const dist = camPointerDist(pts[0], pts[1])
+    if (!pinching || pinchStartDist < 8) {
+      pinching = true
+      pinchStartDist = dist
+      pinchStartCamDist = camDist
+      return
+    }
+    // Pinch out → zoom in (closer); pinch in → zoom out
+    const scale = pinchStartDist / Math.max(12, dist)
+    const maxD = spectating ? 48 : 22
+    camDist = THREE.MathUtils.clamp(pinchStartCamDist * scale, 4, maxD)
+    return
+  }
+
+  if (!camDragging || pinching) return
   const dx = e.clientX - camLastX
   const dy = e.clientY - camLastY
   camLastX = e.clientX
@@ -1183,17 +1389,29 @@ canvas.addEventListener('pointermove', (e) => {
   camPitch += dy * sens
   camPitch = THREE.MathUtils.clamp(camPitch, 0.08, 1.25)
 })
-canvas.addEventListener('pointerup', (e) => {
-  if (e.button === 0) camDragging = false
-})
-canvas.addEventListener('pointercancel', () => {
-  camDragging = false
-})
+canvas.addEventListener('pointerup', endCamPointer)
+canvas.addEventListener('pointercancel', endCamPointer)
 canvas.addEventListener(
   'wheel',
   (e) => {
     e.preventDefault()
-    camDist = THREE.MathUtils.clamp(camDist + e.deltaY * 0.01, 4, 22)
+    const maxD = spectating ? 48 : 22
+    camDist = THREE.MathUtils.clamp(camDist + e.deltaY * 0.01, 4, maxD)
+  },
+  { passive: false },
+)
+// Prevent browser page-zoom stealing the pinch on the game canvas
+canvas.addEventListener(
+  'touchstart',
+  (e) => {
+    if (e.touches.length >= 2) e.preventDefault()
+  },
+  { passive: false },
+)
+canvas.addEventListener(
+  'touchmove',
+  (e) => {
+    if (e.touches.length >= 2) e.preventDefault()
   },
   { passive: false },
 )
@@ -1206,6 +1424,55 @@ function onResize() {
   pad.showIfNeeded()
 }
 window.addEventListener('resize', onResize)
+
+function updateSpectator(delta) {
+  // Orbit a watched crewmate, or free-fly the look pivot
+  if (spectateFollowId && characters[spectateFollowId]) {
+    characters[spectateFollowId].getWorldPosition(tmp)
+    spectateFocus.lerp(tmp, 1 - Math.exp(-6 * delta))
+  }
+
+  camForward.set(-Math.sin(camYaw), 0, -Math.cos(camYaw))
+  camRight.set(Math.cos(camYaw), 0, -Math.sin(camYaw))
+  moveDir.set(0, 0, 0)
+  if (keys.w) moveDir.add(camForward)
+  if (keys.s) moveDir.sub(camForward)
+  if (keys.a) moveDir.sub(camRight)
+  if (keys.d) moveDir.add(camRight)
+  if (Math.hypot(pad.state.x, pad.state.y) > 0.15) {
+    moveDir.addScaledVector(camForward, pad.state.y)
+    moveDir.addScaledVector(camRight, pad.state.x)
+  }
+
+  const fast = keys.shift || padRun || pad.state.run || pad.state.physRun
+  const speed = (fast ? 28 : 14) * delta
+
+  if (moveDir.lengthSq() > 1e-6) {
+    moveDir.normalize()
+    spectateFocus.x += moveDir.x * speed
+    spectateFocus.z += moveDir.z * speed
+    // Manual fly breaks character follow until [/] again
+    if (spectateFollowId) {
+      spectateFollowId = null
+      refreshActiveLabel()
+      refreshCrewStrip()
+    }
+  }
+
+  if (keys.space) spectateFocus.y += speed * 0.85
+  if (keys.control) spectateFocus.y -= speed * 0.85
+
+  // Soft world bounds
+  const r = Math.hypot(spectateFocus.x, spectateFocus.z)
+  if (r > WORLD.sailRadius + 20) {
+    const s = (WORLD.sailRadius + 20) / r
+    spectateFocus.x *= s
+    spectateFocus.z *= s
+  }
+  spectateFocus.y = THREE.MathUtils.clamp(spectateFocus.y, -4, 40)
+
+  updateFollowCamera(spectateFocus, delta, 0.2)
+}
 
 function updateShip(delta) {
   const data = ship.userData
@@ -1393,7 +1660,8 @@ function updateIdleCrew(delta, t) {
   let stillGathering = false
 
   for (const id of CREW_ORDER) {
-    if (id === active) continue
+    // In spectator mode every crewmate idles / wanders
+    if (!spectating && id === active) continue
     if (aboard.has(id)) continue
     const buddy = characters[id]
 
@@ -1525,7 +1793,7 @@ function animate() {
   }
   updateLanterns(night)
   weather.update(delta)
-  bubbles.update(delta, getPlayer().position)
+  bubbles.update(delta, spectating ? spectateFocus : getPlayer().position)
   updateAimZoom(delta)
   updateBarrelRespawn(t)
   updateCannonBall(delta)
@@ -1537,7 +1805,28 @@ function animate() {
     setTimeout(() => setStatus(''), 1000)
   }
 
-  if (onShip) updateShip(delta)
+  if (spectating) {
+    // Freeze sailing input; keep light deck bob if already aboard
+    if (onShip) {
+      ship.userData.speed = 0
+      ship.position.y = 0.2 + Math.sin(t * 1.4) * 0.08
+      ship.rotation.z = Math.sin(t * 1.1) * 0.03
+      ship.rotation.x = Math.sin(t * 0.9) * 0.02
+      ship.updateMatrixWorld(true)
+      for (const id of aboard) {
+        updateCharacterAnim(characters[id], false, false, t, {
+          delta,
+          swimming: false,
+        })
+      }
+    } else {
+      updateIdleCrew(delta, t)
+      updateBerries(t)
+      updateFruits(t)
+      updatePellet(delta)
+    }
+    updateSpectator(delta)
+  } else if (onShip) updateShip(delta)
   else {
     updatePlayer(delta, t)
     updateIdleCrew(delta, t)
@@ -1598,7 +1887,7 @@ function animate() {
   } else gearLight.intensity = 0
 
   // Water tint: darker when diving / night
-  const dive = getPlayer().userData.diving
+  const dive = !spectating && getPlayer().userData.diving
   water.material.opacity = dive ? 0.95 : 0.84 + Math.sin(t * 0.7) * 0.04
   water.material.color.setHex(dive ? 0x0a3a55 : night > 0.5 ? 0x1565a0 : 0x1e90c8)
 
