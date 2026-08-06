@@ -14,6 +14,7 @@ export function createQuestSystem({ onUnlockBoss, onBossDefeated }) {
   document.body.appendChild(el)
   const textEl = el.querySelector('#quest-text')
   const progEl = el.querySelector('#quest-progress')
+  const infoEl = document.querySelector('#quest-hint-line')
 
   let stage = 'chests' // chests | boss | done
   let chestsNeeded = 3
@@ -21,16 +22,24 @@ export function createQuestSystem({ onUnlockBoss, onBossDefeated }) {
   let bossDefeated = false
 
   function refresh(chestsOpened = 0) {
+    let text = ''
+    let prog = ''
     if (stage === 'chests') {
-      textEl.textContent = 'Raid the Grand Line — open treasure chests'
-      progEl.textContent = `Chests ${Math.min(chestsOpened, chestsNeeded)}/${chestsNeeded}`
+      text = 'Raid the Grand Line — open treasure chests'
+      prog = `Chests ${Math.min(chestsOpened, chestsNeeded)}/${chestsNeeded}`
     } else if (stage === 'boss') {
-      textEl.textContent = 'Boss Island unlocked — defeat the Sea King!'
-      progEl.textContent = 'Sail SW to the red island'
+      text = 'Boss Island unlocked — defeat the Sea King!'
+      prog = 'Sail SW to the red island'
     } else {
-      textEl.textContent = 'Archipelago secured — King of the Pirates vibes'
-      progEl.textContent = 'All story beats complete'
+      text = 'Archipelago secured — King of the Pirates vibes'
+      prog = 'All story beats complete'
       el.classList.add('quest-done')
+      infoEl?.classList.add('quest-done')
+    }
+    textEl.textContent = text
+    progEl.textContent = prog
+    if (infoEl) {
+      infoEl.textContent = `Quest: ${text} · ${prog}`
     }
   }
 
