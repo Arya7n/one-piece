@@ -278,13 +278,17 @@ const hudRoot = document.createElement('div')
 hudRoot.id = 'hud-root'
 hudRoot.innerHTML = `
   <div id="hud-bar">
-    <em id="active-char">Playing: Luffy</em>
-    <span id="berry-count-mini">Berry: 0</span>
-    <span id="hp-count-mini">HP: 100</span>
-    <span id="dive-air-mini" hidden>Dive: 100%</span>
-    <button type="button" id="hud-spectate" title="Spectator mode (P)" tabindex="-1">Spec</button>
-    <button type="button" id="hud-guide-slot" hidden aria-hidden="true"></button>
-    <button type="button" id="hud-open" aria-expanded="false" aria-controls="hud-hint" tabindex="-1">Info</button>
+    <div id="hud-bar-main">
+      <em id="active-char" title="Playing: Luffy">Luffy</em>
+      <span id="berry-count-mini">Berry: 0</span>
+      <span id="hp-count-mini">HP: 100</span>
+      <span id="dive-air-mini" hidden>Dive: 100%</span>
+    </div>
+    <div id="hud-bar-actions">
+      <button type="button" id="hud-spectate" title="Spectator mode (P)" tabindex="-1">Spec</button>
+      <button type="button" id="hud-guide-slot" hidden aria-hidden="true"></button>
+      <button type="button" id="hud-open" aria-expanded="false" aria-controls="hud-hint" tabindex="-1">Info</button>
+    </div>
   </div>
   <div id="hud-hint" class="hud-closed" hidden>
     <div class="hud-panel-head">
@@ -862,18 +866,22 @@ function refreshActiveLabel() {
     const who = spectateFollowId
       ? characters[spectateFollowId].userData.displayName
       : 'free cam'
-    const text = `Spectator · ${who}`
-    activeLabel.textContent = text
-    if (activeLabelPanel) activeLabelPanel.textContent = text
+    // Keep top bar short — full line only in Info panel
+    activeLabel.textContent = who
+    activeLabel.title = `Spectator · ${who}`
+    if (activeLabelPanel) activeLabelPanel.textContent = `Spectator · ${who}`
     return
   }
+  const name = characters[active].userData.displayName
   const gear = characters.luffy.userData.gear5 ? ' · GEAR 5!' : ''
   const shipTag = onShip ? ' · On Merry' : ''
   const lost =
     active !== 'zoro' && characters.zoro.userData.lost ? ' · Zoro is lost…' : ''
-  const text = `Playing: ${characters[active].userData.displayName}${gear}${shipTag}${lost}`
-  activeLabel.textContent = text
-  if (activeLabelPanel) activeLabelPanel.textContent = text
+  activeLabel.textContent = name
+  activeLabel.title = `Playing: ${name}${gear}${shipTag}${lost}`
+  if (activeLabelPanel) {
+    activeLabelPanel.textContent = `Playing: ${name}${gear}${shipTag}${lost}`
+  }
 }
 
 function getPlayer() {

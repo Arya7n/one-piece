@@ -408,16 +408,39 @@ body.intro-active #game-toast {
 
 #hud-bar {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 6px 8px;
-  padding: 8px 12px;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
   background: rgba(255, 248, 230, 0.92);
   border: 3px solid #c62828;
   border-radius: 14px;
   box-shadow: 4px 4px 0 #1a1a1a;
   pointer-events: auto;
-  width: 100%;
+  width: max-content;
+  max-width: 100%;
+  box-sizing: border-box;
+  min-height: 40px;
+  height: 40px;
+  overflow: hidden;
+}
+
+#hud-bar-main {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+#hud-bar-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 #hud-bar em {
@@ -425,6 +448,11 @@ body.intro-active #game-toast {
   font-weight: 700;
   color: #1565c0;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 5.5em;
+  flex-shrink: 1;
+  min-width: 0;
 }
 
 #hud-bar span {
@@ -434,19 +462,28 @@ body.intro-active #game-toast {
   padding: 2px 8px;
   border-radius: 999px;
   white-space: nowrap;
+  flex-shrink: 0;
+}
+
+#hud-bar #dive-air-mini {
+  max-width: 7.5em;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 #hud-open,
 #hud-spectate,
 #hud-guide {
   font: 700 12px/1 'Trebuchet MS', 'Segoe UI', sans-serif;
-  padding: 6px 12px;
+  padding: 6px 10px;
   border: 2px solid #1a1a1a;
   border-radius: 10px;
   background: #c62828;
   color: #fff8e1;
   cursor: pointer;
   box-shadow: 2px 2px 0 #1a1a1a;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 #hud-spectate {
@@ -476,6 +513,49 @@ body.spectating #hud-spectate {
 #hud-guide.hud-guide-active,
 #hud-open.hud-open-active {
   background: #5d4037;
+}
+
+/* Minimal parchment scrollbars (Info + Guide) */
+.ui-scroll,
+#hud-hint,
+.guide-body {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(198, 40, 40, 0.45) transparent;
+}
+
+.ui-scroll::-webkit-scrollbar,
+#hud-hint::-webkit-scrollbar,
+.guide-body::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.ui-scroll::-webkit-scrollbar-track,
+#hud-hint::-webkit-scrollbar-track,
+.guide-body::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 4px 0;
+}
+
+.ui-scroll::-webkit-scrollbar-thumb,
+#hud-hint::-webkit-scrollbar-thumb,
+.guide-body::-webkit-scrollbar-thumb {
+  background: rgba(198, 40, 40, 0.4);
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+
+.ui-scroll::-webkit-scrollbar-thumb:hover,
+#hud-hint::-webkit-scrollbar-thumb:hover,
+.guide-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(198, 40, 40, 0.7);
+}
+
+.ui-scroll::-webkit-scrollbar-corner,
+#hud-hint::-webkit-scrollbar-corner,
+.guide-body::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 #hud-hint {
@@ -987,9 +1067,20 @@ body.spectating .pad-spec {
     max-width: calc(100vw - 88px);
   }
   #hud-bar {
-    padding: 6px 8px;
+    padding: 4px 8px;
     font-size: 10px;
-    gap: 4px 6px;
+    gap: 6px;
+    min-height: 36px;
+    height: 36px;
+  }
+  #hud-bar em {
+    max-width: 4.2em;
+  }
+  #hud-open,
+  #hud-spectate,
+  #hud-guide {
+    padding: 5px 8px;
+    font-size: 11px;
   }
   #hud-hint {
     padding: 8px 10px;
