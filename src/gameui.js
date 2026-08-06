@@ -25,13 +25,13 @@ export function createQuestSystem({ onUnlockBoss, onBossDefeated }) {
     let text = ''
     let prog = ''
     if (stage === 'chests') {
-      text = 'Raid the Grand Line — open treasure chests'
+      text = 'Raid One Piece World — open treasure chests'
       prog = `Chests ${Math.min(chestsOpened, chestsNeeded)}/${chestsNeeded}`
     } else if (stage === 'boss') {
       text = 'Boss Island unlocked — defeat the Sea King!'
       prog = 'Sail SW to the red island'
     } else {
-      text = 'Archipelago secured — King of the Pirates vibes'
+      text = 'One Piece World secured — King of the Pirates vibes'
       prog = 'All story beats complete'
       el.classList.add('quest-done')
       infoEl?.classList.add('quest-done')

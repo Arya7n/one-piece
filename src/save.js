@@ -1,11 +1,13 @@
-const SAVE_KEY = 'grandline-archipelago-v1'
+const SAVE_KEY = 'one-piece-world-v1'
+const LEGACY_SAVE_KEY = 'grandline-archipelago-v1'
 
 /**
  * Persist crew progress in localStorage.
  */
 export function loadProgress() {
   try {
-    const raw = localStorage.getItem(SAVE_KEY)
+    const raw =
+      localStorage.getItem(SAVE_KEY) || localStorage.getItem(LEGACY_SAVE_KEY)
     if (!raw) return null
     const data = JSON.parse(raw)
     if (!data || typeof data !== 'object') return null
@@ -23,6 +25,7 @@ export function saveProgress(snapshot) {
       version: 1,
     }
     localStorage.setItem(SAVE_KEY, JSON.stringify(payload))
+    localStorage.removeItem(LEGACY_SAVE_KEY)
     return true
   } catch {
     return false
@@ -32,6 +35,7 @@ export function saveProgress(snapshot) {
 export function clearProgress() {
   try {
     localStorage.removeItem(SAVE_KEY)
+    localStorage.removeItem(LEGACY_SAVE_KEY)
     return true
   } catch {
     return false
@@ -39,5 +43,5 @@ export function clearProgress() {
 }
 
 export function hasProgress() {
-  return !!localStorage.getItem(SAVE_KEY)
+  return !!(localStorage.getItem(SAVE_KEY) || localStorage.getItem(LEGACY_SAVE_KEY))
 }

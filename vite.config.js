@@ -13,10 +13,10 @@ export default defineConfig({
         'pwa-512-maskable.png',
       ],
       manifest: {
-        name: 'Grand Line Archipelago',
-        short_name: 'Grand Line',
+        name: 'One Piece World',
+        short_name: 'One Piece World',
         description:
-          'Sail the archipelago as the Straw Hat crew — explore islands, dive, fight Kaido, and save your progress.',
+          'Sail One Piece World as the Straw Hat crew — explore islands, dive, fight Kaido, and save your progress.',
         theme_color: '#0a1628',
         background_color: '#0a1628',
         display: 'standalone',

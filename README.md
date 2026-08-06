@@ -1,4 +1,4 @@
-# Grand Line Archipelago
+# One Piece World
 
 A Three.js One Piece–inspired open world where you play as Luffy and Zoro — explore islands, swim, smash barrels, and sail the Going Merry.
 

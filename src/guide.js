@@ -1,5 +1,5 @@
 /**
- * In-game user guide — what you can do in Grand Line Archipelago.
+ * In-game user guide — what you can do in One Piece World.
  */
 export function createUserGuide({ onResetProgress, onInstallApp } = {}) {
   const btn = document.createElement('button')
@@ -163,7 +163,7 @@ export function createUserGuide({ onResetProgress, onInstallApp } = {}) {
           </ul>
           <p class="guide-note">Same save data as the browser tab. Load once online; later visits can work offline.</p>
           <button type="button" id="guide-install-app" class="guide-install-btn" hidden>
-            Install Grand Line
+            Install One Piece World
           </button>
           <p id="guide-install-status" class="guide-note"></p>
         </section>
@@ -184,7 +184,7 @@ export function createUserGuide({ onResetProgress, onInstallApp } = {}) {
           </ul>
           <h3>Exploration</h3>
           <ul>
-            <li>Status line (top bar) hints when you’re near something</li>
+            <li>On-screen toast (bottom) shows attacks, rewards, and nearby prompts</li>
             <li>Spectator (<kbd>P</kbd>) — fly around and peek at crew</li>
             <li>See the <strong>Mobile</strong> tab for the full touch layout</li>
           </ul>

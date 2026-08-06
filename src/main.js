@@ -282,14 +282,13 @@ hudRoot.innerHTML = `
     <span id="berry-count-mini">Berry: 0</span>
     <span id="hp-count-mini">HP: 100</span>
     <span id="dive-air-mini" hidden>Dive: 100%</span>
-    <button type="button" id="hud-spectate" title="Spectator mode (P)">Spec</button>
+    <button type="button" id="hud-spectate" title="Spectator mode (P)" tabindex="-1">Spec</button>
     <button type="button" id="hud-guide-slot" hidden aria-hidden="true"></button>
-    <button type="button" id="hud-open" aria-expanded="false" aria-controls="hud-hint">Info</button>
-    <em id="status-line"></em>
+    <button type="button" id="hud-open" aria-expanded="false" aria-controls="hud-hint" tabindex="-1">Info</button>
   </div>
   <div id="hud-hint" class="hud-closed" hidden>
     <div class="hud-panel-head">
-      <strong>Grand Line Archipelago</strong>
+      <strong>One Piece World</strong>
       <button type="button" id="hud-close" aria-label="Close info">×</button>
     </div>
     <span>Open <b>Guide</b> for full controls, crew, quests &amp; adventure zones.</span>
@@ -308,6 +307,12 @@ hudRoot.innerHTML = `
   </div>
 `
 document.body.appendChild(hudRoot)
+
+const toastEl = document.createElement('div')
+toastEl.id = 'game-toast'
+toastEl.setAttribute('role', 'status')
+toastEl.setAttribute('aria-live', 'polite')
+document.body.appendChild(toastEl)
 
 const userGuide = createUserGuide({
   onResetProgress() {
@@ -331,6 +336,7 @@ const dayNightBtn = document.createElement('button')
 dayNightBtn.type = 'button'
 dayNightBtn.id = 'day-night-toggle'
 dayNightBtn.title = 'Switch day / night'
+dayNightBtn.tabIndex = -1
 dayNightBtn.setAttribute('aria-label', 'Switch day or night mode')
 document.body.appendChild(dayNightBtn)
 
@@ -397,7 +403,6 @@ const hudSpectateBtn = hudRoot.querySelector('#hud-spectate')
 const hudCloseBtn = hudRoot.querySelector('#hud-close')
 const activeLabel = hudRoot.querySelector('#active-char')
 const activeLabelPanel = hudRoot.querySelector('#active-char-panel')
-const statusLine = hudRoot.querySelector('#status-line')
 const diveAirMini = hudRoot.querySelector('#dive-air-mini')
 const berryLabel = hudRoot.querySelector('#berry-count')
 const berryMini = hudRoot.querySelector('#berry-count-mini')
@@ -409,6 +414,66 @@ const buffLabel = hudRoot.querySelector('#buff-count')
 const bountyLabel = hudRoot.querySelector('#bounty-count')
 const crewStrip = hudRoot.querySelector('#crew-strip')
 
+/** Ephemeral dialogue toast (attacks, rewards) — not in the top HUD bar */
+let toastMsg = ''
+let toastUntil = 0
+let toastGen = 0
+/** Soft proximity / zone hint — lower priority than toast */
+let softHint = ''
+/** Collected each frame, then committed once (avoids flicker) */
+let softHintFrame = ''
+let lastToastPaint = ''
+
+function isStatusBusy() {
+  return !!toastMsg && performance.now() < toastUntil
+}
+
+function syncToast() {
+  const ephemeral = isStatusBusy() ? toastMsg : ''
+  if (!ephemeral && toastMsg && performance.now() >= toastUntil) toastMsg = ''
+  const text = ephemeral || softHint
+  const mode = ephemeral ? 'alert' : softHint ? 'hint' : ''
+  const paint = `${mode}|${text}`
+  if (paint === lastToastPaint) return
+  lastToastPaint = paint
+  toastEl.textContent = text
+  toastEl.classList.toggle('toast-visible', !!text)
+  toastEl.classList.toggle('toast-alert', mode === 'alert')
+  toastEl.classList.toggle('toast-hint', mode === 'hint')
+}
+
+function setStatus(text, durationMs = 0) {
+  if (getPlayer()?.userData?.diving && !text) return
+  toastGen++
+  const gen = toastGen
+  if (!text) {
+    toastMsg = ''
+    toastUntil = 0
+    syncToast()
+    return
+  }
+  const ms = durationMs > 0 ? durationMs : Math.min(4200, 1400 + text.length * 28)
+  toastMsg = text
+  toastUntil = performance.now() + ms
+  syncToast()
+  setTimeout(() => {
+    if (gen !== toastGen) return
+    toastMsg = ''
+    toastUntil = 0
+    syncToast()
+  }, ms)
+}
+
+function proposeSoftHint(text) {
+  if (text) softHintFrame = text
+}
+
+function commitSoftHints() {
+  softHint = softHintFrame
+  softHintFrame = ''
+  syncToast()
+}
+
 function setHudOpen(open) {
   hint.classList.toggle('hud-closed', !open)
   hint.hidden = !open
@@ -419,10 +484,12 @@ function setHudOpen(open) {
 hudOpenBtn.addEventListener('click', (e) => {
   e.stopPropagation()
   setHudOpen(hint.hidden)
+  hudOpenBtn.blur()
 })
 hudSpectateBtn.addEventListener('click', (e) => {
   e.stopPropagation()
   toggleSpectator()
+  hudSpectateBtn.blur()
 })
 hudCloseBtn.addEventListener('click', (e) => {
   e.stopPropagation()
@@ -448,11 +515,6 @@ document.addEventListener(
   },
   true,
 )
-
-function setStatus(text) {
-  if (getPlayer()?.userData?.diving && !text) return
-  statusLine.textContent = text || ''
-}
 
 let lastDiveHud = ''
 function refreshDiveHud() {
@@ -1168,7 +1230,7 @@ function enforceBossLock(obj) {
     const s = limit / (dist || 0.01)
     obj.position.x = BOSS_ISLAND.x + dx * s
     obj.position.z = BOSS_ISLAND.z + dz * s
-    if (obj === getPlayer() && !statusLine.textContent) {
+    if (obj === getPlayer() && !isStatusBusy()) {
       setStatus('Boss Island sealed — open 3 chests first')
     }
   }
@@ -1482,7 +1544,7 @@ function updateAimZoom(delta) {
   const targetFov = aiming ? 28 : 58
   camera.fov += (targetFov - camera.fov) * Math.min(1, delta * 8)
   camera.updateProjectionMatrix()
-  if (aiming && !statusLine.textContent) setStatus('Sniper aim — F to fire')
+  if (aiming) proposeSoftHint('Sniper aim — F to fire')
 }
 
 function updateLanterns(night) {
@@ -1525,12 +1587,28 @@ const pad = createMobileGamepad({
   },
 })
 
-// Input
+// Input — use e.code so WASD/F work even when focus is on HUD buttons or layout differs
+const MOVE_CODES = {
+  KeyW: 'w',
+  KeyA: 'a',
+  KeyS: 's',
+  KeyD: 'd',
+  KeyV: 'v',
+}
+
+function blurHudFocus() {
+  const ae = document.activeElement
+  if (ae && ae !== document.body && typeof ae.blur === 'function') {
+    if (ae.tagName === 'BUTTON' || ae.tagName === 'A' || ae.getAttribute?.('role') === 'button') {
+      ae.blur()
+    }
+  }
+}
+
 window.addEventListener('keydown', (e) => {
   if (intro?.isActive) return
   if (userGuide.isOpen()) {
     if (e.key === 'Escape') return
-    // Let typing/navigation in guide alone; don't fire game actions
     if (e.key !== 'Escape') {
       const block =
         e.code === 'Space' ||
@@ -1546,13 +1624,14 @@ window.addEventListener('keydown', (e) => {
   // Dive uses X (not Ctrl) so browser shortcuts stay out of the way
   if (e.code === 'KeyX') {
     e.preventDefault()
+    blurHudFocus()
     keys.control = true
     sfx.unlock()
     return
   }
 
   // Soft-block common browser chords while playing (still safer in installed PWA)
-  if (e.ctrlKey || e.metaKey) {
+  if (e.ctrlKey || e.metaKey || e.altKey) {
     e.preventDefault()
     return
   }
@@ -1560,19 +1639,24 @@ window.addEventListener('keydown', (e) => {
   sfx.unlock()
 
   if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys.shift = true
-  if (e.code === 'Space') keys.space = true
+  if (e.code === 'Space') {
+    e.preventDefault()
+    keys.space = true
+  }
 
-  const k = e.key.toLowerCase()
-  if (k === 'control' || k === 'meta' || k === 'alt') return
-
-  // Always track move keys, even while holding dive (X)
-  if (k === 'w' || k === 'a' || k === 's' || k === 'd' || k === 'v') {
-    keys[k] = true
+  // Track move / aim by physical key (fixes D not moving when a button had focus)
+  if (MOVE_CODES[e.code]) {
+    e.preventDefault()
+    blurHudFocus()
+    keys[MOVE_CODES[e.code]] = true
   }
 
   if (e.repeat) return
 
-  if (k === 'p') {
+  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key.toLowerCase()
+
+  if (e.code === 'KeyP' || k === 'p') {
+    e.preventDefault()
     toggleSpectator()
     return
   }
@@ -1589,7 +1673,6 @@ window.addEventListener('keydown', (e) => {
     if (k === '0') setActive('jinbe')
     if (k === ']' || k === '.') cycleCrew(1)
     if (k === '[' || k === ',' || k === 'q') cycleCrew(-1)
-    if (e.code === 'Space') e.preventDefault()
     return
   }
   if (k === '1') setActive('luffy')
@@ -1605,19 +1688,23 @@ window.addEventListener('keydown', (e) => {
   if (k === ']' || k === '.') cycleCrew(1)
   if (k === '[' || k === ',') cycleCrew(-1)
   if (k === 'q') cycleCrew(-1)
-  if (k === 'c') callCrew()
-  if (k === 'b') {
+  if (k === 'c' || e.code === 'KeyC') callCrew()
+  if (k === 'b' || e.code === 'KeyB') {
     bloomEnabled = !bloomEnabled
     bloomPass.enabled = bloomEnabled
   }
-  if (k === 'g') toggleGear5()
-  if (k === 'e') tryInteract()
-  if (k === 'h') recallShipHome()
-  if (k === 'f') {
+  if (k === 'g' || e.code === 'KeyG') toggleGear5()
+  if (k === 'e' || e.code === 'KeyE') {
     e.preventDefault()
+    tryInteract()
+  }
+  if (k === 'h' || e.code === 'KeyH') recallShipHome()
+  if (e.code === 'KeyF' || k === 'f') {
+    e.preventDefault()
+    blurHudFocus()
     doAttack()
   }
-  if (k === ' ') {
+  if (e.code === 'Space' || k === ' ') {
     e.preventDefault()
     tryJump()
   }
@@ -1628,8 +1715,7 @@ window.addEventListener('keyup', (e) => {
     return
   }
   if (e.ctrlKey || e.metaKey) e.preventDefault()
-  const k = e.key.toLowerCase()
-  if (k in keys) keys[k] = false
+  if (MOVE_CODES[e.code]) keys[MOVE_CODES[e.code]] = false
   if (e.code === 'Space') keys.space = false
   if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys.shift = false
 })
@@ -1959,9 +2045,7 @@ function updatePlayer(delta, t) {
     activeId: active,
     onGround: !!player.userData.onGround,
   })
-  if (zoneFx.hint && !statusLine.textContent) {
-    setStatus(zoneFx.hint)
-  }
+  if (zoneFx.hint) proposeSoftHint(zoneFx.hint)
 
   const maxSpeed = running ? base * 2.1 : base
   const iceAccel = zoneFx.iceAccel ?? 1
@@ -2062,7 +2146,7 @@ function updatePlayer(delta, t) {
           refreshDiveHud()
           setStatus('Out of breath! Release dive and recover')
           setTimeout(() => {
-            if (statusLine.textContent.startsWith('Out of breath')) setStatus('')
+            if (toastMsg.startsWith('Out of breath')) setStatus('')
           }, 1600)
         }
       } else if (player.userData.swimming) {
@@ -2376,6 +2460,7 @@ function animate() {
   requestAnimationFrame(animate)
   const delta = Math.min(clock.getDelta(), 0.05)
   const t = clock.elapsedTime
+  softHintFrame = ''
 
   pad.pollPhysical()
 
@@ -2456,6 +2541,7 @@ function animate() {
 
     const player = getPlayer()
     const showHints = !player.userData.diving && !(keys.control || pad.state.dive)
+    let nearHint = ''
 
     if (showHints && nearShip(player)) {
       if (!boardHintShown) {
@@ -2470,36 +2556,41 @@ function animate() {
       for (const chest of chests) {
         if (chest.userData.opened) continue
         if (player.position.distanceTo(chest.position) < 2.4) {
-          if (!statusLine.textContent) setStatus('Press E to open treasure chest')
+          nearHint = 'Press E to open treasure chest'
           break
         }
       }
 
       if (
+        !nearHint &&
         meat &&
         !meat.userData.taken &&
         player.position.distanceTo(meat.position) < 2
       ) {
-        if (!statusLine.textContent) setStatus('Press E to eat meat (+HP)')
+        nearHint = 'Press E to eat meat (+HP)'
       }
 
-      if (
-        cookStation &&
-        player.position.distanceTo(cookStation.position) < 2.8
-      ) {
-        if (!statusLine.textContent) {
-          setStatus(
-            active === 'sanji'
-              ? 'E: cook All Blue feast (5 Berries)'
-              : 'E: cook at Sanji’s station (3 Berries)',
-          )
-        }
+      if (!nearHint && cookStation && player.position.distanceTo(cookStation.position) < 2.8) {
+        nearHint =
+          active === 'sanji'
+            ? 'E: cook All Blue feast (5 Berries)'
+            : 'E: cook at Sanji’s station (3 Berries)'
       }
 
       const cp = nearestClimb(player)
-      if (cp && player.position.y < cp.topY - 0.5 && !player.userData.climbing) {
-        if (!statusLine.textContent) setStatus('Hold W near structure to climb')
+      if (
+        !nearHint &&
+        cp &&
+        player.position.y < cp.topY - 0.5 &&
+        !player.userData.climbing
+      ) {
+        nearHint = 'Hold W near structure to climb'
       }
+    }
+
+    if (nearHint) proposeSoftHint(nearHint)
+    else if (!showHints) {
+      /* diving — no soft prompts */
     }
   }
 
@@ -2545,6 +2636,8 @@ function animate() {
       Math.sin(t * 2) * 0.15
   }
 
+  commitSoftHints()
+
   if (bloomEnabled) composer.render()
   else renderer.render(scene, camera)
 }
@@ -2577,7 +2670,7 @@ intro = createIntro({
     moveFacingInit = true
     playerVel.set(0, 0, 0)
     sfx.unlock()
-    setStatus('Welcome aboard — explore the archipelago!')
+    setStatus('Welcome aboard — explore One Piece World!')
     setTimeout(() => setStatus(''), 2400)
     intro = null
   },

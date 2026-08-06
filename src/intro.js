@@ -17,7 +17,7 @@ export function createIntro({ camera, getPlayer, ship, onComplete, onSkip }) {
     {
       pos: [0, 72, 118],
       look: [0, 4, 0],
-      title: 'Grand Line Archipelago',
+      title: 'One Piece World',
       subtitle: 'A fan-made voyage across the seas',
       duration: 3.8,
     },
