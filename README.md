@@ -17,6 +17,8 @@ Built with Vite: Gear 5 stretch attacks, sword-slash VFX, collectibles, and a bo
 - Nami **rain & lightning** attack; Usopp **sniper zoom (V / RMB)**
 - Sanji **cook station** (spend Berries for big heals / ATK feast)
 - Rising **wanted bounty** poster; berries & barrels **respawn**
+- **Quest beats** (3 chests → unlock Boss Island → defeat Sea King)
+- **Third-person follow camera** (drag to look, scroll to zoom)
 - Gear 5, unique attacks, Devil Fruits, chests, meat HP
 - Zoro occasionally wanders off on his own
 - Mobile virtual gamepad + HTML5 gamepad support
@@ -27,6 +29,7 @@ Built with Vite: Gear 5 stretch attacks, sword-slash VFX, collectibles, and a bo
 | Key | Action |
 |-----|--------|
 | `WASD` | Move / sail |
+| Drag / Scroll | Look / zoom camera |
 | `Shift` | Run (on land) |
 | `Space` | Jump / leap off climb |
 | `F` | Attack / fire ship cannons |
@@ -73,6 +76,7 @@ src/
   audio.js        # Web Audio SFX
   gamepad.js      # mobile + physical gamepad
   systems.js      # weather, day/night, bubbles, bounty, cook
+  gameui.js       # quest tracker
   style.css       # HUD + touch pad styles
 ```
 

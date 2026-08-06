@@ -1,6 +1,5 @@
 import './style.css'
 import * as THREE from 'three'
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
@@ -26,6 +25,8 @@ import {
   groundY,
   WATER_SURFACE,
   SWIM_LAND_THRESHOLD,
+  BOSS_ISLAND,
+  setBossIslandUnlocked,
 } from './world.js'
 import {
   createWeatherSystem,
@@ -33,6 +34,7 @@ import {
   createBubbleSystem,
   createCannonBall,
 } from './systems.js'
+import { createQuestSystem } from './gameui.js'
 import { sfx } from './audio.js'
 import { createMobileGamepad } from './gamepad.js'
 
@@ -79,6 +81,15 @@ const followTarget = new THREE.Vector3()
 const shipForward = new THREE.Vector3()
 const tmp = new THREE.Vector3()
 const attackOrigin = new THREE.Vector3()
+const desiredCam = new THREE.Vector3()
+
+// Third-person follow camera (mouse drag orbits; locked behind target)
+let camYaw = Math.PI
+let camPitch = 0.38
+let camDist = 9
+let camDragging = false
+let camLastX = 0
+let camLastY = 0
 
 // --- Scene ---
 const scene = new THREE.Scene()
@@ -103,15 +114,6 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping
 renderer.toneMappingExposure = 1.15
 renderer.shadowMap.enabled = true
 renderer.shadowMap.type = THREE.PCFSoftShadowMap
-
-const controls = new OrbitControls(camera, canvas)
-controls.enableDamping = true
-controls.dampingFactor = 0.08
-controls.enablePan = false
-controls.minDistance = 4
-controls.maxDistance = 48
-controls.maxPolarAngle = Math.PI * 0.47
-controls.target.set(0, 1.4, 0)
 
 const hemi = new THREE.HemisphereLight(0xfff1c9, 0x3d8f7a, 0.75)
 scene.add(hemi)
@@ -187,6 +189,8 @@ const {
   meat,
   bountyBoard,
   cookStation,
+  bossBarrier,
+  seaKing,
 } = world
 
 const weather = createWeatherSystem(scene)
@@ -217,7 +221,8 @@ hudRoot.innerHTML = `
       <strong>Grand Line Archipelago</strong>
       <button type="button" id="hud-close" aria-label="Close info">×</button>
     </div>
-    <span>WASD · Space jump · F attack · V aim (Usopp) · Ctrl dive · C call · G Gear 5 · E cook/board · H recall</span>
+    <span>WASD · Drag look · Space jump · F attack · V aim · Ctrl dive · C call · E interact · H recall</span>
+    <em id="quest-hint-line">Quest: open 3 chests to unlock Boss Island</em>
     <em id="active-char-panel">Playing: Luffy</em>
     <div id="hud-stats">
       <span id="berry-count">Berry: 0</span>
@@ -255,6 +260,27 @@ dayNightBtn.addEventListener('click', (e) => {
   setTimeout(() => setStatus(''), 1000)
 })
 refreshDayNightBtn()
+
+const quest = createQuestSystem({
+  onUnlockBoss() {
+    setBossIslandUnlocked(true)
+    if (bossBarrier) bossBarrier.visible = false
+    if (seaKing) {
+      seaKing.visible = true
+      seaKing.userData.alive = true
+      seaKing.userData.hp = seaKing.userData.maxHp
+    }
+    sfx.gear()
+    setStatus('BOSS ISLAND UNLOCKED — sail southwest!')
+    setTimeout(() => setStatus(''), 2800)
+    addBounty(2_000_000, 'World Government noticed…')
+  },
+  onBossDefeated() {
+    addBounty(10_000_000, 'Sea King defeated!')
+    setStatus('You cleared Boss Island!')
+    setTimeout(() => setStatus(''), 2500)
+  },
+})
 
 const hint = hudRoot.querySelector('#hud-hint')
 const hudOpenBtn = hudRoot.querySelector('#hud-open')
@@ -409,6 +435,7 @@ function setActive(name) {
   if (!characters[name]) return
   active = name
   characters[name].userData.gathering = false
+  // Keep orbit yaw; camera already sits behind look direction
   sfx.switch()
   refreshActiveLabel()
   refreshCrewStrip()
@@ -658,8 +685,11 @@ function tryInteract() {
       addBounty(500_000, 'Chest claimed')
       refreshStats()
       sfx.chest()
-      setStatus('Treasure! +5 Berry')
-      setTimeout(() => setStatus(''), 1500)
+      const unlocked = quest.onChestOpened(chestsOpened)
+      if (!unlocked) {
+        setStatus(`Treasure! +5 Berry (${chestsOpened}/3 quest)`)
+        setTimeout(() => setStatus(''), 1500)
+      }
       return
     }
   }
@@ -717,7 +747,57 @@ function hitBarrels(origin, range, damage) {
       setTimeout(() => setStatus(''), 900)
     }
   }
+  // Sea King boss
+  if (
+    seaKing?.visible &&
+    seaKing.userData.alive &&
+    origin.distanceTo(seaKing.position) < range + 2.5
+  ) {
+    seaKing.userData.hp -= dmg
+    seaKing.rotation.y += 0.2
+    seaKing.scale.setScalar(0.95 + 0.05 * (seaKing.userData.hp / seaKing.userData.maxHp))
+    hit = true
+    setStatus(`Sea King HP ${Math.max(0, Math.ceil(seaKing.userData.hp))}`)
+    if (seaKing.userData.hp <= 0) {
+      seaKing.userData.alive = false
+      seaKing.visible = false
+      berryCount += 25
+      refreshStats()
+      sfx.smash()
+      quest.onBossDefeated()
+    }
+  }
   return hit
+}
+
+function enforceBossLock(obj) {
+  if (quest.bossUnlocked) return
+  const dx = obj.position.x - BOSS_ISLAND.x
+  const dz = obj.position.z - BOSS_ISLAND.z
+  const dist = Math.hypot(dx, dz)
+  const limit = BOSS_ISLAND.r + 4
+  if (dist < limit) {
+    const s = limit / (dist || 0.01)
+    obj.position.x = BOSS_ISLAND.x + dx * s
+    obj.position.z = BOSS_ISLAND.z + dz * s
+    if (obj === getPlayer() && !statusLine.textContent) {
+      setStatus('Boss Island sealed — open 3 chests first')
+    }
+  }
+}
+
+/** Third-person follow: orbit yaw/pitch from drag only (no auto-spin). */
+function updateFollowCamera(target, delta, lookHeight = 1.4) {
+  const cosP = Math.cos(camPitch)
+  // Camera sits opposite look direction so character faces away from lens
+  desiredCam.set(
+    target.x + Math.sin(camYaw) * camDist * cosP,
+    target.y + Math.sin(camPitch) * camDist + 1.2,
+    target.z + Math.cos(camYaw) * camDist * cosP,
+  )
+  camera.position.lerp(desiredCam, 1 - Math.exp(-14 * delta))
+  lookAt.set(target.x, target.y + lookHeight, target.z)
+  camera.lookAt(lookAt)
 }
 
 function fireShipCannon() {
@@ -1083,6 +1163,41 @@ window.addEventListener('contextmenu', (e) => {
   if (active === 'usopp') e.preventDefault()
 })
 
+// Third-person look — drag on canvas
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return
+  if (e.target !== canvas) return
+  camDragging = true
+  camLastX = e.clientX
+  camLastY = e.clientY
+  canvas.setPointerCapture(e.pointerId)
+})
+canvas.addEventListener('pointermove', (e) => {
+  if (!camDragging) return
+  const dx = e.clientX - camLastX
+  const dy = e.clientY - camLastY
+  camLastX = e.clientX
+  camLastY = e.clientY
+  const sens = aiming ? 0.0016 : 0.0035
+  camYaw -= dx * sens
+  camPitch += dy * sens
+  camPitch = THREE.MathUtils.clamp(camPitch, 0.08, 1.25)
+})
+canvas.addEventListener('pointerup', (e) => {
+  if (e.button === 0) camDragging = false
+})
+canvas.addEventListener('pointercancel', () => {
+  camDragging = false
+})
+canvas.addEventListener(
+  'wheel',
+  (e) => {
+    e.preventDefault()
+    camDist = THREE.MathUtils.clamp(camDist + e.deltaY * 0.01, 4, 22)
+  },
+  { passive: false },
+)
+
 function onResize() {
   camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
@@ -1106,7 +1221,8 @@ function updateShip(delta) {
   if (ma) ship.rotation.y += 1.05 * delta
   if (md) ship.rotation.y -= 1.05 * delta
 
-  shipForward.set(Math.sin(ship.rotation.y), 0, Math.cos(ship.rotation.y))
+  // Merry's bow is local -Z (stern is +Z), so sail along -Z
+  shipForward.set(-Math.sin(ship.rotation.y), 0, -Math.cos(ship.rotation.y))
   ship.position.addScaledVector(shipForward, data.speed * delta)
 
   ship.position.y = 0.2 + Math.sin(clock.elapsedTime * 1.4) * 0.08
@@ -1137,18 +1253,17 @@ function updateShip(delta) {
   }
 
   ship.updateMatrixWorld(true)
-  getPlayer().getWorldPosition(lookAt)
-  lookAt.y += 1.2
-  controls.target.lerp(lookAt, 1 - Math.exp(-6 * delta))
+  enforceBossLock(ship)
+  getPlayer().getWorldPosition(tmp)
+  updateFollowCamera(tmp, delta, 1.6)
 }
 
 function updatePlayer(delta, t) {
   const player = getPlayer()
   moveDir.set(0, 0, 0)
-  camera.getWorldDirection(camForward)
-  camForward.y = 0
-  if (camForward.lengthSq() > 1e-6) camForward.normalize()
-  camRight.set(-camForward.z, 0, camForward.x)
+  // Use orbit yaw (not live camera matrix) so move never feeds camera spin
+  camForward.set(-Math.sin(camYaw), 0, -Math.cos(camYaw))
+  camRight.set(Math.cos(camYaw), 0, -Math.sin(camYaw))
 
   if (keys.w) moveDir.add(camForward)
   if (keys.s) moveDir.sub(camForward)
@@ -1215,6 +1330,8 @@ function updatePlayer(delta, t) {
     player.rotation.y = Math.atan2(moveDir.x, moveDir.z)
   }
 
+  enforceBossLock(player)
+
   // Jump physics
   const wasSwim = player.userData.swimming
   if (!player.userData.climbing) {
@@ -1264,16 +1381,11 @@ function updatePlayer(delta, t) {
     climbing: player.userData.climbing,
   })
 
-  lookAt
-    .copy(player.position)
-    .add(
-      new THREE.Vector3(
-        0,
-        player.userData.diving ? 0.4 : swimming ? 0.9 : 1.4,
-        0,
-      ),
-    )
-  controls.target.lerp(lookAt, 1 - Math.exp(-8 * delta))
+  updateFollowCamera(
+    player.position,
+    delta,
+    player.userData.diving ? 0.4 : swimming ? 0.9 : 1.4,
+  )
 }
 
 function updateIdleCrew(delta, t) {
@@ -1512,11 +1624,18 @@ function animate() {
     ship.userData.wheel.rotation.z = Math.sin(t * 0.4) * 0.15
   }
 
-  controls.update()
+  if (seaKing?.visible && seaKing.userData.alive) {
+    seaKing.rotation.y = t * 0.4
+    seaKing.position.y =
+      groundY(seaKing.position.x, seaKing.position.z) +
+      Math.sin(t * 2) * 0.15
+  }
+
   if (bloomEnabled) composer.render()
   else renderer.render(scene, camera)
 }
 
 refreshStats()
 refreshCrewStrip()
+quest.onChestOpened(chestsOpened) // sync UI
 animate()

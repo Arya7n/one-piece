@@ -17,8 +17,18 @@ export const WORLD = {
     { x: 150, z: -55, r: 28, h: 0.9, theme: 'desert' },
     { x: -130, z: 30, r: 26, h: 0.95, theme: 'winter' },
     { x: 110, z: 110, r: 22, h: 1.05, theme: 'sky', elevate: 14 },
+    // Story boss island (SW) — gated by quest until unlocked
+    { x: -155, z: -110, r: 28, h: 1.08, theme: 'boss', id: 'boss' },
   ],
 }
+
+/** Soft lock: players are pushed away until quest unlocks this */
+export let bossIslandUnlocked = false
+export function setBossIslandUnlocked(v) {
+  bossIslandUnlocked = !!v
+}
+
+export const BOSS_ISLAND = { x: -155, z: -110, r: 28 }
 
 function blobHeight(x, z, cx, cz, radius, hScale, elevate = 0) {
   const dist = Math.hypot(x - cx, z - cz)
@@ -497,6 +507,11 @@ export function buildWorld(scene) {
       } else if (theme === 'sky') {
         if (y < 8) c.copy(cSand)
         else c.copy(cSky).lerp(cBright, 0.35)
+      } else if (theme === 'boss') {
+        const cBoss = new THREE.Color(0x6d4c41)
+        const cLava = new THREE.Color(0xbf360c)
+        if (y < 0.35) c.copy(cSand).lerp(cLava, 0.4)
+        else c.copy(cBoss).lerp(cLava, Math.min(0.5, y / 4))
       } else if (y < 0.2) c.copy(cSand)
       else if (y > 2.8) c.copy(cRock)
       else if (y < 0.55) c.copy(cSand).lerp(cDirt, 0.3)
@@ -906,6 +921,95 @@ export function buildWorld(scene) {
   // Climb sky island edge
   climbPoints.push({ x: 110, z: 110, topY: 16, radius: 3.5 })
 
+  // Boss island — barrier + Sea King dummy
+  const bossCx = BOSS_ISLAND.x
+  const bossCz = BOSS_ISLAND.z
+  const bossBarrier = new THREE.Group()
+  bossBarrier.name = 'BossBarrier'
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * Math.PI * 2
+    const px = bossCx + Math.cos(a) * (BOSS_ISLAND.r + 2)
+    const pz = bossCz + Math.sin(a) * (BOSS_ISLAND.r + 2)
+    const pillar = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.35, 0.45, 4.5, 6),
+      new THREE.MeshStandardMaterial({
+        color: 0x4a148c,
+        emissive: 0x7b1fa2,
+        emissiveIntensity: 0.45,
+        transparent: true,
+        opacity: 0.85,
+      }),
+    )
+    pillar.position.set(px, Math.max(groundY(px, pz), 0.2) + 2.2, pz)
+    bossBarrier.add(pillar)
+  }
+  const barrierRing = new THREE.Mesh(
+    new THREE.TorusGeometry(BOSS_ISLAND.r + 2, 0.35, 8, 40),
+    new THREE.MeshStandardMaterial({
+      color: 0xea80fc,
+      emissive: 0xaa00ff,
+      emissiveIntensity: 0.6,
+      transparent: true,
+      opacity: 0.55,
+    }),
+  )
+  barrierRing.rotation.x = Math.PI / 2
+  barrierRing.position.set(bossCx, 2.5, bossCz)
+  bossBarrier.add(barrierRing)
+  scene.add(bossBarrier)
+
+  const seaKing = new THREE.Group()
+  seaKing.name = 'SeaKing'
+  const body = new THREE.Mesh(
+    new THREE.SphereGeometry(2.4, 16, 12),
+    new THREE.MeshStandardMaterial({ color: 0x1b5e20, roughness: 0.7 }),
+  )
+  body.scale.set(1.2, 0.85, 1.6)
+  body.position.y = 2.2
+  body.castShadow = true
+  seaKing.add(body)
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(1.3, 12, 10),
+    new THREE.MeshStandardMaterial({ color: 0x2e7d32 }),
+  )
+  head.position.set(0, 3.2, -2.2)
+  seaKing.add(head)
+  for (const side of [-1, 1]) {
+    const eye = new THREE.Mesh(
+      new THREE.SphereGeometry(0.22, 8, 8),
+      new THREE.MeshStandardMaterial({
+        color: 0xffeb3b,
+        emissive: 0xffc107,
+        emissiveIntensity: 0.5,
+      }),
+    )
+    eye.position.set(side * 0.45, 3.4, -3.1)
+    seaKing.add(eye)
+  }
+  place(seaKing, bossCx, bossCz, 0)
+  seaKing.visible = false
+  seaKing.userData = {
+    kind: 'boss',
+    hp: 40,
+    maxHp: 40,
+    alive: true,
+  }
+  scene.add(seaKing)
+
+  // Berries / barrels on boss isle
+  for (const [x, z] of [
+    [-150, -105],
+    [-160, -115],
+  ]) {
+    if (!isWalkable(x, z)) continue
+    const berry = makeBerry()
+    place(berry, x, z, 0.9)
+    berry.userData.homeX = x
+    berry.userData.homeZ = z
+    scene.add(berry)
+    berries.push(berry)
+  }
+
   return {
     water,
     ship,
@@ -921,6 +1025,8 @@ export function buildWorld(scene) {
     mats,
     bountyBoard,
     cookStation,
+    bossBarrier,
+    seaKing,
   }
 }
 
