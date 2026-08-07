@@ -120,7 +120,7 @@ export function createUserGuide({ onResetProgress, onInstallApp } = {}) {
           <h3>Main quest</h3>
           <ul>
             <li>Open <strong>3 chests</strong> to unlock Boss Island</li>
-            <li>Defeat <strong>Kaido</strong> for the big bounty bump</li>
+            <li>Defeat <strong>Kaido</strong> — then enjoy the victory ceremony</li>
           </ul>
           <p class="guide-note">Quest progress also shows in the Info panel.</p>
         </section>
@@ -169,6 +169,13 @@ export function createUserGuide({ onResetProgress, onInstallApp } = {}) {
         </section>
 
         <section class="guide-panel" data-panel="tips">
+          <h3>Audio</h3>
+          <ul>
+            <li><kbd>M</kbd> or Info → <strong>Audio</strong> — mute / unmute</li>
+            <li>Explore &amp; boss beds play automatically (procedural — no files needed)</li>
+            <li>Optional: drop loops in <code>public/audio/</code> as <code>explore.mp3</code>, <code>boss.mp3</code>, <code>victory.mp3</code> (ogg/wav also work)</li>
+            <li>Don’t use One Piece OST files — those are copyrighted</li>
+          </ul>
           <h3>Combat &amp; survival</h3>
           <ul>
             <li>Kaido telegraphs swings and breath — keep moving</li>

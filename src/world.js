@@ -1,24 +1,28 @@
 import * as THREE from 'three'
 import { createBountyPoster, makeCookStation } from './systems.js'
 
+/** Uniform world scale — bigger islands + wider seas */
+export const WORLD_SCALE = 1.75
+export const W = (n) => n * WORLD_SCALE
+
 export const WORLD = {
-  size: 360,
-  segments: 200,
-  sailRadius: 250,
+  size: 720,
+  segments: 280,
+  sailRadius: 480,
   islands: [
-    { x: 0, z: 0, r: 52, h: 1, theme: 'grass' },
-    { x: 95, z: -12, r: 32, h: 0.95, theme: 'grass' },
-    { x: -55, z: 85, r: 26, h: 0.92, theme: 'winter' },
-    { x: 70, z: 75, r: 22, h: 0.88, theme: 'grass' },
-    { x: -90, z: -40, r: 28, h: 0.9, theme: 'desert' },
-    { x: 20, z: -95, r: 24, h: 0.85, theme: 'grass' },
-    { x: -40, z: -70, r: 18, h: 0.8, theme: 'grass' },
+    { x: 0, z: 0, r: W(52), h: 1.08, theme: 'grass' },
+    { x: W(95), z: W(-12), r: W(32), h: 1.0, theme: 'grass' },
+    { x: W(-55), z: W(85), r: W(26), h: 0.98, theme: 'winter' },
+    { x: W(70), z: W(75), r: W(22), h: 0.95, theme: 'grass' },
+    { x: W(-90), z: W(-40), r: W(28), h: 0.96, theme: 'desert' },
+    { x: W(20), z: W(-95), r: W(24), h: 0.92, theme: 'grass' },
+    { x: W(-40), z: W(-70), r: W(18), h: 0.88, theme: 'grass' },
     // Unique theme islands
-    { x: 150, z: -55, r: 28, h: 0.9, theme: 'desert' },
-    { x: -130, z: 30, r: 26, h: 0.95, theme: 'winter' },
-    { x: 110, z: 110, r: 22, h: 1.05, theme: 'sky', elevate: 14 },
+    { x: W(150), z: W(-55), r: W(28), h: 0.96, theme: 'desert' },
+    { x: W(-130), z: W(30), r: W(26), h: 1.0, theme: 'winter' },
+    { x: W(110), z: W(110), r: W(22), h: 1.12, theme: 'sky', elevate: 18 },
     // Story boss island (SW) — gated by quest until unlocked
-    { x: -155, z: -110, r: 28, h: 1.08, theme: 'boss', id: 'boss' },
+    { x: W(-155), z: W(-110), r: W(30), h: 1.14, theme: 'boss', id: 'boss' },
   ],
 }
 
@@ -28,7 +32,11 @@ export function setBossIslandUnlocked(v) {
   bossIslandUnlocked = !!v
 }
 
-export const BOSS_ISLAND = { x: -155, z: -110, r: 28 }
+export const BOSS_ISLAND = {
+  x: W(-155),
+  z: W(-110),
+  r: W(30),
+}
 
 function blobHeight(x, z, cx, cz, radius, hScale, elevate = 0) {
   const dist = Math.hypot(x - cx, z - cz)
@@ -36,11 +44,13 @@ function blobHeight(x, z, cx, cz, radius, hScale, elevate = 0) {
   const falloff = edge * edge * (3 - 2 * edge)
   const lx = x - cx
   const lz = z - cz
+  // Lower frequency so hills read well on larger islands
+  const f = 1 / WORLD_SCALE
   const hills =
-    Math.sin(lx * 0.11) * Math.cos(lz * 0.09) * 1.5 +
-    Math.sin(lx * 0.26 + 1.2) * Math.sin(lz * 0.22) * 0.75 +
-    Math.sin((lx + lz) * 0.07) * 0.5
-  const plateau = Math.exp(-(lx * lx + lz * lz) * 0.0028) * 0.55
+    Math.sin(lx * 0.11 * f) * Math.cos(lz * 0.09 * f) * 1.8 +
+    Math.sin(lx * 0.26 * f + 1.2) * Math.sin(lz * 0.22 * f) * 0.9 +
+    Math.sin((lx + lz) * 0.07 * f) * 0.6
+  const plateau = Math.exp(-(lx * lx + lz * lz) * (0.0028 * f * f)) * 0.7
   return (hills + plateau) * falloff * hScale + elevate * falloff - (1 - falloff) * 5
 }
 
@@ -66,19 +76,15 @@ export function islandHeight(x, z) {
     )
   }
   // Sandbar bridges between nearby islands
-  const bridges = [
-    { x0: 40, x1: 88, z: -6, halfW: 4 },
-    { x0: 25, x1: 55, z: 55, halfW: 3.5, alongAxis: 'diag' },
-  ]
   // Main → east pier path
-  if (x > 40 && x < 92 && Math.abs(z - -6) < 4) {
-    const along = THREE.MathUtils.clamp((x - 40) / 52, 0, 1)
-    const ridge = 0.55 - Math.abs(z + 6) * 0.1
+  if (x > W(40) && x < W(92) && Math.abs(z - W(-6)) < W(4)) {
+    const along = THREE.MathUtils.clamp((x - W(40)) / W(52), 0, 1)
+    const ridge = 0.55 - Math.abs(z - W(-6)) * 0.1
     best = Math.max(best, ridge * (0.55 + along * 0.4))
   }
   // Main → south sandbar
-  if (z < -40 && z > -90 && Math.abs(x - 8) < 5) {
-    const along = THREE.MathUtils.clamp((-z - 40) / 50, 0, 1)
+  if (z < W(-40) && z > W(-90) && Math.abs(x - W(8)) < W(5)) {
+    const along = THREE.MathUtils.clamp((-z - W(40)) / W(50), 0, 1)
     best = Math.max(best, 0.4 * (0.5 + along * 0.3))
   }
   return best
@@ -406,10 +412,11 @@ function makeWantedBoard(mats) {
 
 function makeBridge(mats) {
   const g = new THREE.Group()
-  for (let i = 0; i < 36; i++) {
-    const x = 42 + i * 1.4
-    const z = -6 + Math.sin(i * 0.35) * 0.2
-    const plank = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.18, 2.6), mats.wood)
+  const steps = 48
+  for (let i = 0; i < steps; i++) {
+    const x = W(42) + i * W(1.4)
+    const z = W(-6) + Math.sin(i * 0.35) * 0.2
+    const plank = new THREE.Mesh(new THREE.BoxGeometry(W(1.5), 0.18, W(2.6)), mats.wood)
     plank.position.x = x
     plank.position.z = z
     plank.position.y = Math.max(groundY(x, z), 0.35) + 0.15
@@ -417,7 +424,7 @@ function makeBridge(mats) {
     plank.receiveShadow = true
     g.add(plank)
     if (i % 3 === 0) {
-      for (const side of [-1.4, 1.4]) {
+      for (const side of [-W(1.4), W(1.4)]) {
         const rail = new THREE.Mesh(
           new THREE.CylinderGeometry(0.06, 0.07, 1.1, 5),
           mats.woodDark,
@@ -556,6 +563,8 @@ export function buildWorld(scene) {
     [18, -10],
     [-8, 18],
     [8, -18],
+    [28, 24],
+    [-28, 12],
     [85, -18],
     [100, -8],
     [92, 4],
@@ -577,7 +586,10 @@ export function buildWorld(scene) {
     [35, 20],
     [-25, 30],
     [50, -40],
-  ]
+    [150, -55],
+    [-130, 30],
+    [110, 110],
+  ].map(([x, z]) => [W(x), W(z)])
   for (const [x, z] of palmSpots) {
     if (!isWalkable(x, z)) continue
     const palm = makePalm(mats, 0.85 + Math.random() * 0.5)
@@ -596,19 +608,19 @@ export function buildWorld(scene) {
   ]
   for (const [x, z, rot] of houses) {
     const house = makeHouse(mats)
-    place(house, x, z)
+    place(house, W(x), W(z))
     house.rotation.y = rot
     village.add(house)
   }
   scene.add(village)
 
   const bountyBoard = createBountyPoster(mats)
-  place(bountyBoard, -6, -5)
+  place(bountyBoard, W(-6), W(-5))
   bountyBoard.rotation.y = 0.5
   scene.add(bountyBoard)
 
   const cookStation = makeCookStation(mats)
-  place(cookStation, -16, -4)
+  place(cookStation, W(-16), W(-4))
   cookStation.rotation.y = 0.8
   scene.add(cookStation)
 
@@ -618,7 +630,7 @@ export function buildWorld(scene) {
     [145, -50],
     [155, -60],
     [-95, -35],
-  ]) {
+  ].map(([x, z]) => [W(x), W(z)])) {
     if (groundY(x, z) < 0.2) continue
     const dune = new THREE.Mesh(
       new THREE.ConeGeometry(2.2, 1.4, 7),
@@ -632,7 +644,7 @@ export function buildWorld(scene) {
     [-125, 28],
     [-135, 35],
     [-50, 90],
-  ]) {
+  ].map(([x, z]) => [W(x), W(z)])) {
     if (groundY(x, z) < 0.2) continue
     const spike = new THREE.Mesh(
       new THREE.ConeGeometry(0.5, 3.5, 5),
@@ -649,7 +661,7 @@ export function buildWorld(scene) {
   // Sky island cloud ring
   {
     const ring = new THREE.Mesh(
-      new THREE.TorusGeometry(16, 2.2, 8, 24),
+      new THREE.TorusGeometry(W(16), 2.2, 8, 24),
       new THREE.MeshStandardMaterial({
         color: 0xffffff,
         roughness: 1,
@@ -658,7 +670,7 @@ export function buildWorld(scene) {
       }),
     )
     ring.rotation.x = Math.PI / 2
-    ring.position.set(110, 12, 110)
+    ring.position.set(W(110), 16, W(110))
     scene.add(ring)
   }
 
@@ -667,7 +679,7 @@ export function buildWorld(scene) {
 
   // Watchtower on east island
   const tower = makeWatchtower(mats)
-  place(tower, 95, -10)
+  place(tower, W(95), W(-10))
   scene.add(tower)
 
   // North rocky camp
@@ -687,14 +699,14 @@ export function buildWorld(scene) {
   )
   flame.position.y = 0.7
   campFire.add(flame)
-  place(campFire, -55, 85, 0)
+  place(campFire, W(-55), W(85), 0)
   scene.add(campFire)
 
   // Pier from beach straight to the Merry dock
   const pier = new THREE.Group()
   for (let i = 0; i < 16; i++) {
     const plank = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.16, 1.15), mats.wood)
-    plank.position.set(8 + i * 0.45, 0.52, 4 + i * 0.7)
+    plank.position.set(W(8) + i * W(0.45), 0.52, W(4) + i * W(0.7))
     plank.castShadow = true
     plank.receiveShadow = true
     pier.add(plank)
@@ -710,7 +722,7 @@ export function buildWorld(scene) {
       new THREE.CylinderGeometry(0.12, 0.14, 1.6, 6),
       mats.woodDark,
     )
-    post.position.set(14.8 + dx, 0.4, 14.5 + dz)
+    post.position.set(W(14.8) + dx, 0.4, W(14.5) + dz)
     pier.add(post)
   }
   scene.add(pier)
@@ -718,7 +730,7 @@ export function buildWorld(scene) {
   const eastPier = new THREE.Group()
   for (let i = 0; i < 8; i++) {
     const plank = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.15, 1.0), mats.wood)
-    plank.position.set(108 + i * 0.05, 0.4, -8 + i * 0.9)
+    plank.position.set(W(108) + i * 0.05, 0.4, W(-8) + i * W(0.9))
     eastPier.add(plank)
   }
   scene.add(eastPier)
@@ -737,7 +749,7 @@ export function buildWorld(scene) {
   )
   steak.scale.set(1.4, 0.7, 1)
   meat.add(steak)
-  place(meat, 2.5, -1.5, 0.35)
+  place(meat, W(2.5), W(-1.5), 0.35)
   scene.add(meat)
 
   // Flag — Straw Hat Jolly Roger
@@ -751,7 +763,7 @@ export function buildWorld(scene) {
   const flag = makeJollyRogerFlag(1.6, 1.05)
   flag.position.set(0.85, 3.1, 0)
   flagPole.add(flag)
-  place(flagPole, -2, 2)
+  place(flagPole, W(-2), W(2))
   scene.add(flagPole)
 
   // Ship
@@ -789,7 +801,7 @@ export function buildWorld(scene) {
     [-135, 25],
     [108, 108],
     [115, 112],
-  ]
+  ].map(([x, z]) => [W(x), W(z)])
   for (const [x, z] of berrySpots) {
     if (!isWalkable(x, z)) continue
     const berry = makeBerry()
@@ -808,7 +820,7 @@ export function buildWorld(scene) {
     [-88, -42, 'desert'],
     [22, -92, 'south'],
     [72, 78, 'north'],
-  ]) {
+  ].map(([x, z, id]) => [W(x), W(z), id])) {
     const chest = makeChest()
     place(chest, x, z, 0)
     chest.rotation.y = Math.random() * Math.PI
@@ -832,7 +844,7 @@ export function buildWorld(scene) {
     [150, -55],
     [-130, 28],
     [112, 110],
-  ]) {
+  ].map(([x, z]) => [W(x), W(z)])) {
     const barrel = makeBreakableBarrel(mats)
     place(barrel, x, z, 0.5)
     barrel.userData.homeX = x
@@ -878,9 +890,9 @@ export function buildWorld(scene) {
       g.add(puff)
     }
     g.position.set(
-      (Math.random() - 0.5) * 220,
+      (Math.random() - 0.5) * W(220),
       28 + Math.random() * 16,
-      (Math.random() - 0.5) * 220,
+      (Math.random() - 0.5) * W(220),
     )
     scene.add(g)
     clouds.push(g)
@@ -889,12 +901,12 @@ export function buildWorld(scene) {
   // Devil Fruit pickups
   const fruits = []
   const fruitDefs = [
-    { x: 12, z: -12, type: 'gomu', label: 'Gomu Gomu', color: 0xff5252, buff: 'stretch' },
-    { x: 92, z: 10, type: 'mero', label: 'Mero Mero', color: 0xff80ab, buff: 'charm' },
-    { x: -50, z: 78, type: 'hana', label: 'Hana Hana', color: 0xce93d8, buff: 'bloom' },
-    { x: 68, z: 78, type: 'suna', label: 'Suna Suna', color: 0xffe082, buff: 'speed' },
-    { x: -85, z: -45, type: 'gomu', label: 'Gomu Gomu', color: 0xff5252, buff: 'stretch' },
-    { x: 18, z: -88, type: 'suna', label: 'Suna Suna', color: 0xffe082, buff: 'speed' },
+    { x: W(12), z: W(-12), type: 'gomu', label: 'Gomu Gomu', color: 0xff5252, buff: 'stretch' },
+    { x: W(92), z: W(10), type: 'mero', label: 'Mero Mero', color: 0xff80ab, buff: 'charm' },
+    { x: W(-50), z: W(78), type: 'hana', label: 'Hana Hana', color: 0xce93d8, buff: 'bloom' },
+    { x: W(68), z: W(78), type: 'suna', label: 'Suna Suna', color: 0xffe082, buff: 'speed' },
+    { x: W(-85), z: W(-45), type: 'gomu', label: 'Gomu Gomu', color: 0xff5252, buff: 'stretch' },
+    { x: W(18), z: W(-88), type: 'suna', label: 'Suna Suna', color: 0xffe082, buff: 'speed' },
   ]
   for (const def of fruitDefs) {
     if (!isWalkable(def.x, def.z)) continue
@@ -906,17 +918,17 @@ export function buildWorld(scene) {
 
   // Climb points (watchtower + village roof-ish poles)
   const climbPoints = [
-    { x: 95, z: -10, topY: 5.2, radius: 2.2 },
-    { x: -10, z: -6, topY: 2.8, radius: 1.8 },
-    { x: -2, z: 2, topY: 3.2, radius: 1.2 },
-    { x: -88, z: -40, topY: 3.0, radius: 2.0 },
+    { x: W(95), z: W(-10), topY: 5.2, radius: 2.2 },
+    { x: W(-10), z: W(-6), topY: 2.8, radius: 1.8 },
+    { x: W(-2), z: W(2), topY: 3.2, radius: 1.2 },
+    { x: W(-88), z: W(-40), topY: 3.0, radius: 2.0 },
   ]
 
   // Meat is heal pickup
   meat.userData = { kind: 'meat', taken: false }
 
   // Climb sky island edge
-  climbPoints.push({ x: 110, z: 110, topY: 16, radius: 3.5 })
+  climbPoints.push({ x: W(110), z: W(110), topY: 20, radius: 4.2 })
 
   // Boss island — barrier + Sea King dummy
   const bossCx = BOSS_ISLAND.x
@@ -1124,7 +1136,7 @@ export function buildWorld(scene) {
   for (const [x, z] of [
     [-150, -105],
     [-160, -115],
-  ]) {
+  ].map(([x, z]) => [W(x), W(z)])) {
     if (!isWalkable(x, z)) continue
     const berry = makeBerry()
     place(berry, x, z, 0.9)
@@ -1650,7 +1662,7 @@ function makeShip(mats) {
   ship.add(plank)
 
   // Docked at pier
-  ship.position.set(15.2, 0.35, 16.8)
+  ship.position.set(W(15.2), 0.35, W(16.8))
   ship.rotation.y = Math.PI + 0.35
   ship.scale.setScalar(0.78)
 
@@ -1665,7 +1677,7 @@ function makeShip(mats) {
     lanternLights,
     cannons,
     cannonCooldown: 0,
-    home: { x: 15.2, z: 16.8, rot: Math.PI + 0.35 },
+    home: { x: W(15.2), z: W(16.8), rot: Math.PI + 0.35 },
   }
   return ship
 }

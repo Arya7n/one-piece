@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { BOSS_ISLAND } from './world.js'
+import { BOSS_ISLAND, W } from './world.js'
 
 function easeInOutCubic(t) {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
@@ -15,52 +15,52 @@ export function createIntro({ camera, getPlayer, ship, onComplete, onSkip }) {
 
   const beats = [
     {
-      pos: [0, 72, 118],
+      pos: [0, W(72), W(118)],
       look: [0, 4, 0],
       title: 'One Piece World',
       subtitle: 'A fan-made voyage across the seas',
       duration: 3.8,
     },
     {
-      pos: [42, 14, 38],
+      pos: [W(42), 14, W(38)],
       look: () => ship.position.clone().add(new THREE.Vector3(0, 2.5, 0)),
       title: 'The Going Merry',
       subtitle: 'Board with E · Sail with WASD · Fire cannons with F',
       duration: 3.2,
     },
     {
-      pos: [-38, 28, 52],
+      pos: [W(-38), 28, W(52)],
       look: [0, 6, 0],
       title: 'The Straw Hat crew',
       subtitle: 'Ten pirates · Ten islands · One dream',
       duration: 3.2,
     },
     {
-      pos: [128, 22, -8],
-      look: [150, 4, -55],
+      pos: [W(128), 22, W(-8)],
+      look: [W(150), 4, W(-55)],
       title: 'Desert & winter isles',
       subtitle: 'Berry, chests, and Devil Fruits hide in every biome',
       duration: 3,
     },
     {
-      pos: [-108, 26, 68],
-      look: [-130, 5, 30],
+      pos: [W(-108), 26, W(68)],
+      look: [W(-130), 5, W(30)],
       title: 'Frozen shores',
       subtitle: 'Climb towers · Dive beneath the waves',
       duration: 2.6,
     },
     {
-      pos: [138, 52, 128],
-      look: [110, 18, 110],
+      pos: [W(138), 52, W(128)],
+      look: [W(110), 18, W(110)],
       title: 'Sky island',
       subtitle: 'Hold W near cliffs to climb into the clouds',
       duration: 3,
     },
     {
-      pos: [-72, 38, -48],
+      pos: [W(-72), 38, W(-48)],
       look: [BOSS_ISLAND.x, 6, BOSS_ISLAND.z],
       title: 'Boss Island',
-      subtitle: 'Open three chests to unlock the southwest · Sea King awaits',
+      subtitle: 'Open three chests to unlock the southwest · Kaido awaits',
       duration: 3.4,
     },
     {

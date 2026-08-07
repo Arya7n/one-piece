@@ -20,12 +20,12 @@ import {
 } from './characters.js'
 import {
   WORLD,
+  W,
   buildWorld,
   applyTerrainOrSwim,
   groundY,
   WATER_SURFACE,
   SWIM_LAND_THRESHOLD,
-  BOSS_ISLAND,
   setBossIslandUnlocked,
 } from './world.js'
 import {
@@ -43,25 +43,21 @@ import {
   getZoneProgress,
   applyZoneProgress,
 } from './zones.js'
-import { sfx } from './audio.js'
+import { sfx, music } from './audio.js'
 import { createMobileGamepad } from './gamepad.js'
 import { createIntro, syncOrbitFromCamera } from './intro.js'
+import { createEpilogue } from './epilogue.js'
 import { createUserGuide } from './guide.js'
 import { loadProgress, saveProgress, clearProgress } from './save.js'
 import { initPwaInstall, onInstallStateChange, promptInstall, isStandalone } from './pwa.js'
+import { createKeys, bindGameInput } from './input.js'
+import { createCollectibles } from './collectibles.js'
+import { createShipController } from './ship.js'
+import { createBossController } from './boss.js'
 
 const canvas = document.querySelector('#canvas')
 
-const keys = {
-  w: false,
-  a: false,
-  s: false,
-  d: false,
-  shift: false,
-  v: false,
-  control: false,
-  space: false,
-}
+const keys = createKeys()
 
 let active = 'luffy'
 /** Free camera — no character control */
@@ -105,7 +101,6 @@ const attackOrigin = new THREE.Vector3()
 const desiredCam = new THREE.Vector3()
 const playerVel = new THREE.Vector3()
 const spectateVel = new THREE.Vector3()
-let shipTurnVel = 0
 let moveFacing = 0
 let moveFacingInit = false
 /** Soft camera look-height (avoids dive/surface pop) */
@@ -126,6 +121,12 @@ let pinching = false
 
 /** Opening fly-through tour (skippable) */
 let intro = null
+let epilogue = null
+let epilogueSeen = false
+
+function isCinematic() {
+  return !!(intro?.isActive || epilogue?.isActive)
+}
 
 // --- Scene ---
 const scene = new THREE.Scene()
@@ -307,7 +308,10 @@ hudRoot.innerHTML = `
       <span id="buff-count">Buff: —</span>
     </div>
     <div id="crew-strip"></div>
-    <button type="button" id="open-guide-from-info" class="guide-link-btn">Open full Guide</button>
+    <div class="hud-info-actions">
+      <button type="button" id="mute-toggle" class="hud-info-btn" aria-label="Mute or unmute audio">Audio</button>
+      <button type="button" id="open-guide-from-info" class="guide-link-btn">Open full Guide</button>
+    </div>
   </div>
 `
 document.body.appendChild(hudRoot)
@@ -344,6 +348,25 @@ dayNightBtn.tabIndex = -1
 dayNightBtn.setAttribute('aria-label', 'Switch day or night mode')
 document.body.appendChild(dayNightBtn)
 
+const muteBtn = hudRoot.querySelector('#mute-toggle')
+
+function refreshMuteBtn() {
+  const on = music.muted
+  muteBtn.textContent = on ? 'Muted' : 'Audio on'
+  muteBtn.dataset.muted = on ? 'true' : 'false'
+  muteBtn.setAttribute('aria-pressed', on ? 'true' : 'false')
+  muteBtn.title = on ? 'Unmute (M)' : 'Mute (M)'
+}
+refreshMuteBtn()
+
+muteBtn.addEventListener('click', (e) => {
+  e.stopPropagation()
+  sfx.unlock()
+  music.toggleMute()
+  refreshMuteBtn()
+  muteBtn.blur()
+})
+
 const bossHud = document.createElement('div')
 bossHud.id = 'boss-hud'
 bossHud.innerHTML = `
@@ -374,6 +397,8 @@ dayNightBtn.addEventListener('click', (e) => {
 })
 refreshDayNightBtn()
 
+let refreshBossHud = () => {}
+
 const quest = createQuestSystem({
   onUnlockBoss() {
     setBossIslandUnlocked(true)
@@ -397,7 +422,9 @@ const quest = createQuestSystem({
     setStatus('You cleared Boss Island!')
     refreshBossHud()
     persistProgress()
-    setTimeout(() => setStatus(''), 2500)
+    setTimeout(() => setStatus(''), 1800)
+    // Let Kaido's fall read, then start the victory ceremony
+    setTimeout(() => startEpilogue(), 1600)
   },
 })
 
@@ -557,6 +584,22 @@ function addBounty(amount, reason) {
   }
 }
 
+function updateMusicMood() {
+  if (music.muted || epilogue?.isActive) return
+  if (intro?.isActive) {
+    if (music.track !== 'explore') music.setTrack('explore')
+    return
+  }
+  const boss = seaKing
+  const nearBoss =
+    quest.bossUnlocked &&
+    boss?.visible &&
+    boss.userData.alive &&
+    getPlayer().position.distanceTo(boss.position) < 42
+  const want = nearBoss ? 'boss' : 'explore'
+  if (music.track !== want && music.track !== 'victory') music.setTrack(want)
+}
+
 function refreshStats() {
   const berry = `Berry: ${berryCount}`
   const hp = `HP: ${Math.max(0, Math.round(playerHp))}`
@@ -574,15 +617,6 @@ function refreshStats() {
       : 'Buff: —'
 }
 
-function refreshBossHud() {
-  const activeBoss = seaKing?.visible && seaKing.userData.alive
-  bossHud.classList.toggle('boss-hud-visible', !!activeBoss)
-  if (!activeBoss) return
-  const pct = THREE.MathUtils.clamp(seaKing.userData.hp / seaKing.userData.maxHp, 0, 1)
-  bossBarFill.style.width = `${pct * 100}%`
-  bossHud.classList.toggle('boss-phase-rage', pct < 0.45)
-}
-
 function persistProgress() {
   saveProgress({
     berryCount,
@@ -593,6 +627,7 @@ function persistProgress() {
     questStage: quest.stage,
     bossUnlocked: quest.bossUnlocked,
     bossDefeated: quest.bossDefeated,
+    epilogueSeen,
     openChestIds: chests
       .filter((c) => c.userData.opened)
       .map((c) => c.userData.id)
@@ -608,6 +643,7 @@ function applySavedProgress(data) {
   barrelsSmashed = data.barrelsSmashed ?? barrelsSmashed
   playerHp = data.playerHp ?? playerHp
   crewBounty = data.crewBounty ?? crewBounty
+  epilogueSeen = !!data.epilogueSeen
 
   const opened = new Set(data.openChestIds || [])
   for (const chest of chests) {
@@ -651,7 +687,7 @@ function applySavedProgress(data) {
 }
 
 function damagePlayer(amount, reason = 'Kaido strikes!', from = null) {
-  if (spectating || intro?.isActive) return false
+  if (spectating || isCinematic()) return false
   const player = getPlayer()
   if (player.userData.damageLock > 0) return false
   player.userData.damageLock = 0.95
@@ -690,16 +726,16 @@ function damagePlayer(amount, reason = 'Kaido strikes!', from = null) {
 // Characters — spread across the archipelago; only the active one is controlled
 const characters = createCrew()
 const spawnSpots = {
-  luffy: [0, 2],
-  zoro: [8, -6],
-  nami: [-12, -8],
-  usopp: [92, -6],
-  sanji: [-52, 82],
-  chopper: [68, 72],
-  robin: [-88, -42],
-  franky: [18, -90],
-  brook: [-40, -68],
-  jinbe: [14, 14],
+  luffy: [W(0), W(2)],
+  zoro: [W(8), W(-6)],
+  nami: [W(-12), W(-8)],
+  usopp: [W(92), W(-6)],
+  sanji: [W(-52), W(82)],
+  chopper: [W(68), W(72)],
+  robin: [W(-88), W(-42)],
+  franky: [W(18), W(-90)],
+  brook: [W(-40), W(-68)],
+  jinbe: [W(14), W(14)],
 }
 CREW_ORDER.forEach((id) => {
   const c = characters[id]
@@ -927,14 +963,152 @@ function pickIdleTarget(buddy) {
   return new THREE.Vector3(x, 0, z)
 }
 
-function nearShip(player) {
-  ship.updateMatrixWorld(true)
-  const deck = new THREE.Vector3()
-  ship.userData.seatLuffy.getWorldPosition(deck)
-  return (
-    player.position.distanceTo(deck) < 11 ||
-    player.position.distanceTo(ship.position) < 10
-  )
+const bossCtrl = createBossController({
+  quest,
+  getPlayer,
+  getSeaKing: () => seaKing,
+  isStatusBusy,
+  setStatus,
+  bossHud,
+  bossBarFill,
+  damagePlayer,
+  getSpectating: () => spectating,
+  isIntroActive: () => isCinematic(),
+  getOnShip: () => onShip,
+  bossShockwave,
+  bossBreath,
+  tmp,
+})
+refreshBossHud = bossCtrl.refreshBossHud
+const { enforceBossLock, updateBossFight } = bossCtrl
+
+const {
+  updateBerries,
+  updateBarrelRespawn,
+  updateFruits,
+  hitBarrels,
+} = createCollectibles({
+  getPlayer,
+  getOnShip: () => onShip,
+  getActive: () => active,
+  getCharacters: () => characters,
+  getBerries: () => berries,
+  getBarrels: () => barrels,
+  getFruits: () => fruits,
+  getMeat: () => meat,
+  getSeaKing: () => seaKing,
+  getClock: () => clock,
+  getFruitBuff: () => fruitBuff,
+  setFruitBuff: (v) => {
+    fruitBuff = v
+  },
+  getCookBuff: () => cookBuff,
+  getBerryCount: () => berryCount,
+  setBerryCount: (v) => {
+    berryCount = v
+  },
+  getBarrelsSmashed: () => barrelsSmashed,
+  setBarrelsSmashed: (v) => {
+    barrelsSmashed = v
+  },
+  getAiming: () => aiming,
+  groundY,
+  sfx,
+  setStatus,
+  addBounty,
+  refreshStats,
+  refreshBossHud: () => refreshBossHud(),
+  persistProgress,
+  quest,
+})
+
+let pad = null
+const {
+  nearShip,
+  recallShipHome,
+  boardShip,
+  leaveShip,
+  tryBoardToggle,
+  fireShipCannon,
+  updateShip,
+  updateLanterns,
+} = createShipController({
+  ship,
+  scene,
+  characters,
+  CREW_ORDER,
+  getActive: () => active,
+  getPlayer,
+  getSpectating: () => spectating,
+  aboard,
+  getOnShip: () => onShip,
+  setOnShip: (v) => {
+    onShip = v
+  },
+  getGathering: () => gathering,
+  setGathering: (v) => {
+    gathering = v
+  },
+  keys,
+  getPad: () => pad,
+  clock,
+  shipForward,
+  tmp,
+  cannonBall,
+  sfx,
+  setStatus,
+  refreshActiveLabel,
+  enforceBossLock,
+  updateFollowCamera: (target, delta, lookHeight) => updateFollowCamera(target, delta, lookHeight),
+})
+
+function startEpilogue() {
+  if (epilogueSeen || epilogue?.isActive || intro?.isActive) return
+  if (spectating) exitSpectator()
+  if (onShip) leaveShip()
+
+  epilogue = createEpilogue({
+    camera,
+    getPlayer,
+    ship,
+    getSeaKing: () => seaKing,
+    getCrewBounty: () => crewBounty,
+    formatBounty,
+    onGatherCrew() {
+      gathering = true
+      for (const id of CREW_ORDER) {
+        if (id === active) continue
+        if (aboard.has(id)) continue
+        const c = characters[id]
+        c.userData.gathering = true
+        c.userData.lost = false
+        c.userData.idleTarget = null
+      }
+      sfx.board()
+    },
+    onSkip: () => sfx.unlock(),
+    onComplete({ orbit }) {
+      if (orbit) {
+        camYaw = orbit.camYaw
+        camPitch = orbit.camPitch
+        camDist = orbit.camDist
+        smoothLookAt.copy(orbit.smoothLookAt)
+      }
+      const p = getPlayer()
+      moveFacing = p.rotation.y
+      moveFacingInit = true
+      playerVel.set(0, 0, 0)
+      epilogueSeen = true
+      epilogue = null
+      persistProgress()
+      sfx.gear()
+      music.setTrack('explore')
+      setStatus('The seas are yours — sail wherever you like!')
+      setTimeout(() => setStatus(''), 2800)
+    },
+  })
+  sfx.gear()
+  music.setTrack('victory')
 }
 
 function nearestClimb(player) {
@@ -943,117 +1117,6 @@ function nearestClimb(player) {
     if (d < cp.radius) return cp
   }
   return null
-}
-
-function recallShipHome() {
-  if (spectating) return
-  if (onShip) {
-    setStatus('Leave the ship first (E), then recall')
-    return
-  }
-  const home = ship.userData.home
-  ship.position.set(home.x, 0.35, home.z)
-  ship.rotation.set(0, home.rot, 0)
-  ship.userData.speed = 0
-  setStatus('Going Merry returned to the pier!')
-  setTimeout(() => setStatus(''), 1600)
-}
-
-function boardShip() {
-  if (onShip) return
-  const player = getPlayer()
-  // Board active + anyone nearby (after a call / already close)
-  const boarding = CREW_ORDER.filter((id) => {
-    const c = characters[id]
-    if (id === active) return true
-    return c.position.distanceTo(player.position) < 8 || c.position.distanceTo(ship.position) < 12
-  })
-
-  onShip = true
-  aboard.clear()
-  sfx.board()
-
-  // Boarding seats — slightly higher for new deck
-  const seats = [
-    [-1.2, 1.65, 0.5],
-    [1.2, 1.65, 0.5],
-    [-1.5, 1.65, -1.2],
-    [1.5, 1.65, -1.2],
-    [0, 1.65, -0.2],
-    [-0.9, 1.65, 1.8],
-    [0.9, 1.65, 1.8],
-    [-1.6, 1.65, -2.2],
-    [1.6, 1.65, -2.2],
-    [0, 1.65, -3.0],
-  ]
-
-  boarding.forEach((id, i) => {
-    const c = characters[id]
-    c.userData.swimming = false
-    c.userData.climbing = false
-    c.userData.velY = 0
-    c.userData.gathering = false
-    if (c.userData.hips) c.userData.hips.rotation.x = 0
-    ship.attach(c)
-    const [x, y, z] = seats[i % seats.length]
-    c.position.set(x, y, z)
-    c.rotation.set(0, Math.PI, 0)
-    aboard.add(id)
-  })
-
-  gathering = false
-  ship.userData.speed = 0
-  refreshActiveLabel()
-  const leftBehind = CREW_ORDER.length - boarding.length
-  setStatus(
-    leftBehind
-      ? `Aboard (${boarding.length})! ${leftBehind} left behind — Call (C) next time`
-      : 'Full crew aboard! WASD sail · E leave',
-  )
-}
-
-function leaveShip() {
-  if (!onShip) return
-  onShip = false
-  ship.updateMatrixWorld(true)
-  const exit = new THREE.Vector3()
-  ship.getWorldPosition(exit)
-  const side = new THREE.Vector3(
-    Math.sin(ship.rotation.y + Math.PI),
-    0,
-    Math.cos(ship.rotation.y + Math.PI),
-  )
-  let i = 0
-  for (const id of [...aboard]) {
-    const c = characters[id]
-    scene.attach(c)
-    c.position
-      .copy(exit)
-      .addScaledVector(side, 5)
-      .add(new THREE.Vector3((i % 5) * 0.7 - 1.4, 0, Math.floor(i / 5) * 0.8))
-    applyTerrainOrSwim(c)
-    c.userData.gathering = false
-    c.userData.idleTarget = null
-    c.userData.idleWait = 1 + Math.random() * 2
-    i++
-  }
-  aboard.clear()
-  ship.userData.speed = 0
-  refreshActiveLabel()
-  setStatus(
-    getPlayer().userData.swimming
-      ? 'Swimming! Shore or H to recall Merry'
-      : 'Landed!',
-  )
-  setTimeout(() => setStatus(''), 2000)
-}
-
-function tryBoardToggle() {
-  if (onShip) {
-    leaveShip()
-    return
-  }
-  if (nearShip(getPlayer())) boardShip()
 }
 
 function tryCook() {
@@ -1169,81 +1232,6 @@ function tryInteract() {
   setTimeout(() => setStatus(''), 1400)
 }
 
-function damageMul() {
-  let m = 1
-  if (fruitBuff?.buff === 'stretch' || fruitBuff?.buff === 'bloom') m *= 1.5
-  if (fruitBuff?.buff === 'charm') m *= 1.25
-  if (active === 'luffy' && characters.luffy.userData.gear5) m *= 1.4
-  if (cookBuff) m *= cookBuff.mul
-  return m
-}
-
-function hitBarrels(origin, range, damage) {
-  let hit = false
-  const dmg = damage * damageMul()
-  for (const barrel of barrels) {
-    if (!barrel.visible || barrel.userData.hp <= 0) continue
-    if (origin.distanceTo(barrel.position) > range) continue
-    barrel.userData.hp -= dmg
-    barrel.scale.y = 0.5 + 0.5 * (barrel.userData.hp / barrel.userData.maxHp)
-    barrel.rotation.z += (Math.random() - 0.5) * 0.4
-    hit = true
-    if (barrel.userData.hp <= 0) {
-      barrel.visible = false
-      barrel.userData.respawnAt = clock.elapsedTime + 28 + Math.random() * 12
-      barrelsSmashed++
-      berryCount += 1
-      addBounty(150_000)
-      refreshStats()
-      sfx.smash()
-      setStatus('Barrel smashed! +1 Berry')
-      setTimeout(() => setStatus(''), 900)
-    }
-  }
-  // Kaido boss
-  if (
-    seaKing?.visible &&
-    seaKing.userData.alive &&
-    origin.distanceTo(seaKing.position) < range + 2.5
-  ) {
-    if (seaKing.userData.invuln > 0) return hit
-    seaKing.userData.hp -= dmg
-    seaKing.rotation.y += 0.12
-    seaKing.userData.hitFlash = 0.2
-    seaKing.userData.invuln = 0.08
-    hit = true
-    refreshBossHud()
-    setStatus(`Kaido HP ${Math.max(0, Math.ceil(seaKing.userData.hp))}`)
-    if (seaKing.userData.hp <= 0) {
-      seaKing.userData.alive = false
-      seaKing.userData.phase = 'downed'
-      berryCount += 25
-      refreshStats()
-      refreshBossHud()
-      sfx.smash()
-      quest.onBossDefeated()
-      persistProgress()
-    }
-  }
-  return hit
-}
-
-function enforceBossLock(obj) {
-  if (quest.bossUnlocked) return
-  const dx = obj.position.x - BOSS_ISLAND.x
-  const dz = obj.position.z - BOSS_ISLAND.z
-  const dist = Math.hypot(dx, dz)
-  const limit = BOSS_ISLAND.r + 4
-  if (dist < limit) {
-    const s = limit / (dist || 0.01)
-    obj.position.x = BOSS_ISLAND.x + dx * s
-    obj.position.z = BOSS_ISLAND.z + dz * s
-    if (obj === getPlayer() && !isStatusBusy()) {
-      setStatus('Boss Island sealed — open 3 chests first')
-    }
-  }
-}
-
 function shortestAngle(from, to) {
   let d = to - from
   while (d > Math.PI) d -= Math.PI * 2
@@ -1263,33 +1251,6 @@ function updateFollowCamera(target, delta, lookHeight = 1.4) {
   lookAt.set(target.x, target.y + lookHeight, target.z)
   smoothLookAt.lerp(lookAt, 1 - Math.exp(-10 * delta))
   camera.lookAt(smoothLookAt)
-}
-
-function fireShipCannon() {
-  const data = ship.userData
-  if (!data.cannons?.length || data.cannonCooldown > 0) return
-  if (cannonBall.userData.active) return
-  data.cannonCooldown = 0.85
-  // Alternate sides
-  data._cannonIdx = ((data._cannonIdx || 0) + 1) % data.cannons.length
-  const c = data.cannons[data._cannonIdx]
-  ship.updateMatrixWorld(true)
-  c.muzzle.getWorldPosition(cannonBall.position)
-  const side = c.side
-  // Fire sideways relative to ship heading
-  cannonBall.userData.dir
-    .set(
-      Math.sin(ship.rotation.y) * 0.15 + Math.cos(ship.rotation.y) * side,
-      0.08,
-      Math.cos(ship.rotation.y) * 0.15 - Math.sin(ship.rotation.y) * side,
-    )
-    .normalize()
-  cannonBall.userData.t = 0
-  cannonBall.userData.active = true
-  cannonBall.visible = true
-  sfx.cannon()
-  setStatus('Fire!!!')
-  setTimeout(() => setStatus(''), 600)
 }
 
 function doAttack() {
@@ -1432,100 +1393,6 @@ function toggleGear5() {
   setTimeout(() => setStatus(''), 1200)
 }
 
-function updateBerries(t) {
-  const player = getPlayer()
-  for (const berry of berries) {
-    // Respawn
-    if (berry.userData.taken && berry.userData.respawnAt && t >= berry.userData.respawnAt) {
-      berry.userData.taken = false
-      berry.visible = true
-      berry.position.x = berry.userData.homeX
-      berry.position.z = berry.userData.homeZ
-      berry.userData.respawnAt = 0
-    }
-    if (berry.userData.taken) continue
-    berry.rotation.y = t * 2 + berry.userData.spin
-    berry.position.y =
-      groundY(berry.position.x, berry.position.z) +
-      0.9 +
-      Math.sin(t * 3 + berry.userData.spin) * 0.15
-
-    if (!onShip && player.position.distanceTo(berry.position) < 1.4) {
-      berry.userData.taken = true
-      berry.visible = false
-      berry.userData.respawnAt = t + 22 + Math.random() * 10
-      berryCount++
-      addBounty(25_000)
-      refreshStats()
-      sfx.berry()
-      setStatus(`Berry +1  (total ${berryCount})`)
-      setTimeout(() => setStatus(''), 700)
-      persistProgress()
-    }
-  }
-}
-
-function updateBarrelRespawn(t) {
-  for (const barrel of barrels) {
-    if (
-      !barrel.visible &&
-      barrel.userData.respawnAt &&
-      t >= barrel.userData.respawnAt
-    ) {
-      barrel.visible = true
-      barrel.userData.hp = barrel.userData.maxHp
-      barrel.scale.set(1, 1, 1)
-      barrel.rotation.z = 0
-      barrel.position.x = barrel.userData.homeX
-      barrel.position.z = barrel.userData.homeZ
-      barrel.position.y = groundY(barrel.userData.homeX, barrel.userData.homeZ) + 0.5
-      barrel.userData.respawnAt = 0
-    }
-  }
-  if (meat?.userData.taken && meat.userData.respawnAt && t >= meat.userData.respawnAt) {
-    meat.userData.taken = false
-    meat.visible = true
-    meat.userData.respawnAt = 0
-  }
-}
-
-function updateFruits(t) {
-  const player = getPlayer()
-  for (const fruit of fruits) {
-    if (fruit.userData.taken) continue
-    fruit.rotation.y = t * 1.5 + fruit.userData.spin
-    fruit.position.y =
-      groundY(fruit.position.x, fruit.position.z) +
-      0.85 +
-      Math.sin(t * 2.5 + fruit.userData.spin) * 0.12
-
-    if (!onShip && player.position.distanceTo(fruit.position) < 1.6) {
-      fruit.userData.taken = true
-      fruit.visible = false
-      fruitBuff = {
-        buff: fruit.userData.buff,
-        label: fruit.userData.label,
-        until: t + 25,
-      }
-      // Devil Fruit users can't swim well — unless Jinbe
-      if (active !== 'jinbe') {
-        setStatus(`${fruit.userData.label}! Buff 25s — careful in water`)
-      } else {
-        setStatus(`${fruit.userData.label}! Buff 25s`)
-      }
-      sfx.fruit()
-      refreshStats()
-      setTimeout(() => setStatus(''), 2000)
-    }
-  }
-  if (fruitBuff && t > fruitBuff.until) {
-    fruitBuff = null
-    refreshStats()
-    setStatus('Devil Fruit power faded')
-    setTimeout(() => setStatus(''), 1200)
-  }
-}
-
 function updatePellet(delta) {
   if (!pellet.visible) return
   pellet.userData.t += delta
@@ -1555,19 +1422,8 @@ function updateAimZoom(delta) {
   if (aiming) proposeSoftHint('Sniper aim — F to fire')
 }
 
-function updateLanterns(night) {
-  const lights = ship.userData.lanternLights || []
-  const intensity = night > 0.35 ? (night - 0.35) * 4.5 : 0
-  for (const entry of lights) {
-    entry.light.intensity = intensity
-    if (entry.mesh?.material) {
-      entry.mesh.material.emissiveIntensity = 0.35 + intensity * 0.4
-    }
-  }
-}
-
 // Mobile pad
-const pad = createMobileGamepad({
+pad = createMobileGamepad({
   onAttack: () => doAttack(),
   onInteract: () => {
     if (spectating) {
@@ -1595,154 +1451,32 @@ const pad = createMobileGamepad({
   },
 })
 
-// Input — use e.code so WASD/F work even when focus is on HUD buttons or layout differs
-const MOVE_CODES = {
-  KeyW: 'w',
-  KeyA: 'a',
-  KeyS: 's',
-  KeyD: 'd',
-  KeyV: 'v',
-}
-
-function blurHudFocus() {
-  const ae = document.activeElement
-  if (ae && ae !== document.body && typeof ae.blur === 'function') {
-    if (ae.tagName === 'BUTTON' || ae.tagName === 'A' || ae.getAttribute?.('role') === 'button') {
-      ae.blur()
-    }
-  }
-}
-
-window.addEventListener('keydown', (e) => {
-  if (intro?.isActive) return
-  if (userGuide.isOpen()) {
-    if (e.key === 'Escape') return
-    if (e.key !== 'Escape') {
-      const block =
-        e.code === 'Space' ||
-        e.code.startsWith('Key') ||
-        e.code.startsWith('Digit') ||
-        e.code === 'BracketLeft' ||
-        e.code === 'BracketRight'
-      if (block) e.preventDefault()
-    }
-    return
-  }
-
-  // Dive uses X (not Ctrl) so browser shortcuts stay out of the way
-  if (e.code === 'KeyX') {
-    e.preventDefault()
-    blurHudFocus()
-    keys.control = true
-    sfx.unlock()
-    return
-  }
-
-  // Soft-block common browser chords while playing (still safer in installed PWA)
-  if (e.ctrlKey || e.metaKey || e.altKey) {
-    e.preventDefault()
-    return
-  }
-
-  sfx.unlock()
-
-  if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys.shift = true
-  if (e.code === 'Space') {
-    e.preventDefault()
-    keys.space = true
-  }
-
-  // Track move / aim by physical key (fixes D not moving when a button had focus)
-  if (MOVE_CODES[e.code]) {
-    e.preventDefault()
-    blurHudFocus()
-    keys[MOVE_CODES[e.code]] = true
-  }
-
-  if (e.repeat) return
-
-  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key.toLowerCase()
-
-  if (e.code === 'KeyP' || k === 'p') {
-    e.preventDefault()
-    toggleSpectator()
-    return
-  }
-  if (spectating) {
-    if (k === '1') setActive('luffy')
-    if (k === '2') setActive('zoro')
-    if (k === '3') setActive('nami')
-    if (k === '4') setActive('usopp')
-    if (k === '5') setActive('sanji')
-    if (k === '6') setActive('chopper')
-    if (k === '7') setActive('robin')
-    if (k === '8') setActive('franky')
-    if (k === '9') setActive('brook')
-    if (k === '0') setActive('jinbe')
-    if (k === ']' || k === '.') cycleCrew(1)
-    if (k === '[' || k === ',' || k === 'q') cycleCrew(-1)
-    return
-  }
-  if (k === '1') setActive('luffy')
-  if (k === '2') setActive('zoro')
-  if (k === '3') setActive('nami')
-  if (k === '4') setActive('usopp')
-  if (k === '5') setActive('sanji')
-  if (k === '6') setActive('chopper')
-  if (k === '7') setActive('robin')
-  if (k === '8') setActive('franky')
-  if (k === '9') setActive('brook')
-  if (k === '0') setActive('jinbe')
-  if (k === ']' || k === '.') cycleCrew(1)
-  if (k === '[' || k === ',') cycleCrew(-1)
-  if (k === 'q') cycleCrew(-1)
-  if (k === 'c' || e.code === 'KeyC') callCrew()
-  if (k === 'b' || e.code === 'KeyB') {
-    bloomEnabled = !bloomEnabled
-    bloomPass.enabled = bloomEnabled
-  }
-  if (k === 'g' || e.code === 'KeyG') toggleGear5()
-  if (k === 'e' || e.code === 'KeyE') {
-    e.preventDefault()
-    tryInteract()
-  }
-  if (k === 'h' || e.code === 'KeyH') recallShipHome()
-  if (e.code === 'KeyF' || k === 'f') {
-    e.preventDefault()
-    blurHudFocus()
-    doAttack()
-  }
-  if (e.code === 'Space' || k === ' ') {
-    e.preventDefault()
-    tryJump()
-  }
-})
-window.addEventListener('keyup', (e) => {
-  if (e.code === 'KeyX') {
-    keys.control = false
-    return
-  }
-  if (e.ctrlKey || e.metaKey) e.preventDefault()
-  if (MOVE_CODES[e.code]) keys[MOVE_CODES[e.code]] = false
-  if (e.code === 'Space') keys.space = false
-  if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys.shift = false
-})
-// Stop Ctrl+wheel browser zoom from resizing the page and breaking the HUD
-window.addEventListener(
-  'wheel',
-  (e) => {
-    if (e.ctrlKey || e.metaKey) e.preventDefault()
+bindGameInput({
+  keys,
+  sfx,
+  isIntroActive: () => isCinematic(),
+  isUserGuideOpen: () => userGuide.isOpen(),
+  getSpectating: () => spectating,
+  setActive,
+  cycleCrew,
+  callCrew,
+  toggleSpectator,
+  toggleGear5,
+  tryInteract,
+  recallShipHome,
+  doAttack,
+  tryJump,
+  getActive: () => active,
+  getBloomEnabled: () => bloomEnabled,
+  setBloomEnabled: (v) => {
+    bloomEnabled = v
   },
-  { passive: false },
-)
-window.addEventListener('mousedown', (e) => {
-  if (e.button === 2 && active === 'usopp') keys.v = true
-})
-window.addEventListener('mouseup', (e) => {
-  if (e.button === 2) keys.v = false
-})
-window.addEventListener('contextmenu', (e) => {
-  if (active === 'usopp') e.preventDefault()
+  bloomPass,
+  toggleMute() {
+    sfx.unlock()
+    music.toggleMute()
+    refreshMuteBtn()
+  },
 })
 
 function camPointerDist(a, b) {
@@ -1767,7 +1501,7 @@ function endCamPointer(e) {
 
 // Third-person look + pinch zoom on canvas
 canvas.addEventListener('pointerdown', (e) => {
-  if (intro?.isActive) return
+  if (isCinematic()) return
   if (e.pointerType === 'mouse' && e.button !== 0) return
   if (e.target !== canvas) return
   camPointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
@@ -1914,69 +1648,6 @@ function updateSpectator(delta) {
   spectateFocus.y = THREE.MathUtils.clamp(spectateFocus.y, -4, 40)
 
   updateFollowCamera(spectateFocus, delta, 0.2)
-}
-
-function updateShip(delta) {
-  const data = ship.userData
-  const t = clock.elapsedTime
-  const mx = keys.w || pad.state.y > 0.3
-  const ms = keys.s || pad.state.y < -0.3
-  const ma = keys.a || pad.state.x < -0.3
-  const md = keys.d || pad.state.x > 0.3
-
-  const targetSpeed = mx ? 15 : ms ? -6.5 : 0
-  data.speed += (targetSpeed - data.speed) * (1 - Math.exp(-(mx || ms ? 2.2 : 3.5) * delta))
-
-  const turnTarget = (ma ? 1 : 0) + (md ? -1 : 0)
-  shipTurnVel += (turnTarget * 1.05 - shipTurnVel) * (1 - Math.exp(-6 * delta))
-  ship.rotation.y += shipTurnVel * delta
-
-  // Merry's bow is local -Z (stern is +Z), so sail along -Z
-  shipForward.set(-Math.sin(ship.rotation.y), 0, -Math.cos(ship.rotation.y))
-  ship.position.addScaledVector(shipForward, data.speed * delta)
-
-  const waveY = sampleWaveHeight(ship.position.x, ship.position.z, t)
-  const waveYaw = sampleWaveHeight(ship.position.x + 1.2, ship.position.z, t)
-  const waveRoll = sampleWaveHeight(ship.position.x, ship.position.z + 1.2, t)
-  ship.position.y = 0.18 + waveY * 0.85
-  ship.rotation.z = THREE.MathUtils.lerp(
-    ship.rotation.z,
-    (waveRoll - waveY) * 0.35 + Math.sin(t * 0.9) * 0.015,
-    1 - Math.exp(-4 * delta),
-  )
-  ship.rotation.x = THREE.MathUtils.lerp(
-    ship.rotation.x,
-    (waveYaw - waveY) * 0.28 + Math.sin(t * 0.7) * 0.012,
-    1 - Math.exp(-4 * delta),
-  )
-
-  const r = Math.hypot(ship.position.x, ship.position.z)
-  if (r > WORLD.sailRadius) {
-    ship.position.x *= WORLD.sailRadius / r
-    ship.position.z *= WORLD.sailRadius / r
-    data.speed *= -0.35
-  }
-
-  const landUnder = groundY(ship.position.x, ship.position.z)
-  if (landUnder > 0.6) {
-    ship.position.addScaledVector(shipForward, -data.speed * delta * 1.5)
-    data.speed *= -0.4
-    setStatus('Too shallow — steer back to open water')
-  }
-
-  if (data.cannonCooldown > 0) data.cannonCooldown -= delta
-
-  for (const id of aboard) {
-    updateCharacterAnim(characters[id], false, false, t, {
-      delta,
-      swimming: false,
-    })
-  }
-
-  ship.updateMatrixWorld(true)
-  enforceBossLock(ship)
-  getPlayer().getWorldPosition(tmp)
-  updateFollowCamera(tmp, delta, 1.6)
 }
 
 function updatePlayer(delta, t) {
@@ -2186,7 +1857,7 @@ function updateIdleCrew(delta, t) {
   let stillGathering = false
 
   for (const id of CREW_ORDER) {
-    if (!intro?.isActive && id === active) continue
+    if (!isCinematic() && id === active) continue
     if (aboard.has(id)) continue
     const buddy = characters[id]
 
@@ -2305,157 +1976,6 @@ function updateSlashVfx(delta) {
   }
 }
 
-function updateBossFight(delta, t) {
-  if (!seaKing?.visible) {
-    bossShockwave.visible = false
-    bossBreath.visible = false
-    refreshBossHud()
-    return
-  }
-
-  const boss = seaKing
-  const data = boss.userData
-  data.cooldown = Math.max(0, (data.cooldown || 0) - delta)
-  data.attackT = Math.max(0, (data.attackT || 0) - delta)
-  data.invuln = Math.max(0, (data.invuln || 0) - delta)
-  data.hitFlash = Math.max(0, (data.hitFlash || 0) - delta)
-  refreshBossHud()
-
-  if (!data.alive) {
-    boss.rotation.z = THREE.MathUtils.lerp(boss.rotation.z, -1.35, 1 - Math.exp(-3 * delta))
-    boss.position.y = Math.max(groundY(boss.position.x, boss.position.z), boss.position.y - delta * 0.8)
-    if (boss.rotation.z < -1.26) boss.visible = false
-    bossBreath.visible = false
-    bossShockwave.visible = false
-    return
-  }
-
-  const player = getPlayer()
-  const aggro =
-    !spectating &&
-    !intro?.isActive &&
-    !onShip &&
-    quest.bossUnlocked &&
-    player.position.distanceTo(boss.position) < 34
-
-  const rage = data.hp / data.maxHp < 0.45
-  const moveSpeed = rage ? 4.4 : 3.1
-  const dx = player.position.x - boss.position.x
-  const dz = player.position.z - boss.position.z
-  const dist = Math.hypot(dx, dz)
-  const targetYaw = Math.atan2(dx, dz)
-  boss.rotation.y += shortestAngle(boss.rotation.y, targetYaw) * (1 - Math.exp(-4 * delta))
-
-  const pulse = 0.45 + Math.sin(t * (rage ? 9 : 6)) * 0.18
-  data.chest.material.emissiveIntensity = 0.18 + data.hitFlash * 1.8 + pulse * 0.25
-
-  if (!aggro) {
-    boss.position.x += (data.home.x - boss.position.x) * Math.min(1, delta * 0.7)
-    boss.position.z += (data.home.z - boss.position.z) * Math.min(1, delta * 0.7)
-    data.phase = 'idle'
-    data.armR.rotation.x += (0 - data.armR.rotation.x) * (1 - Math.exp(-5 * delta))
-    data.armR.rotation.z += (0.15 - data.armR.rotation.z) * (1 - Math.exp(-5 * delta))
-    bossBreath.visible = false
-    bossShockwave.visible = false
-    return
-  }
-
-  if (data.phase === 'idle' && data.cooldown <= 0) {
-    if (dist < 5.2) {
-      data.phase = 'swing'
-      data.attackT = rage ? 0.82 : 0.95
-      data.didHit = false
-      setStatus('Kaido winds up Thunder Bagua!')
-    } else if (dist < 16) {
-      data.phase = 'breath'
-      data.attackT = rage ? 1.35 : 1.55
-      data.didHit = false
-      bossBreath.visible = true
-      bossBreath.material.opacity = 0.88
-      setStatus('Kaido charges Boro Breath!')
-    } else {
-      data.cooldown = 0.2
-    }
-  }
-
-  if (data.phase === 'idle' && dist > 4.3) {
-    boss.position.x += Math.sin(boss.rotation.y) * moveSpeed * delta
-    boss.position.z += Math.cos(boss.rotation.y) * moveSpeed * delta
-  } else if (data.phase === 'swing') {
-    const p = 1 - data.attackT / (rage ? 0.82 : 0.95)
-    if (p < 0.45) {
-      data.armR.rotation.x = -0.8 - p * 2.8
-      data.armR.rotation.z = 0.35
-    } else {
-      data.armR.rotation.x = -2.05 + (p - 0.45) * 5.9
-      data.armR.rotation.z = -0.15
-      if (!bossShockwave.userData.active) {
-        bossShockwave.visible = true
-        bossShockwave.material.opacity = 0.85
-        bossShockwave.position.set(boss.position.x, groundY(boss.position.x, boss.position.z) + 0.12, boss.position.z)
-        bossShockwave.userData = { t: 0, active: true, didHit: false, radius: 2.2 }
-      }
-      if (!data.didHit && dist < 5.7) {
-        damagePlayer(rage ? 22 : 16, 'Thunder Bagua!', boss.position)
-        data.didHit = true
-      }
-    }
-    if (data.attackT <= 0) {
-      data.phase = 'idle'
-      data.cooldown = rage ? 1.15 : 1.6
-    }
-  } else if (data.phase === 'breath') {
-    const mouth = data.head.position.clone().applyMatrix4(boss.matrixWorld)
-    const dir = tmp.copy(player.position).sub(mouth).setY(0.2).normalize()
-    bossBreath.visible = true
-    bossBreath.userData.active = true
-    bossBreath.userData.dir.copy(dir)
-    const len = THREE.MathUtils.clamp(dist, 6, 15)
-    bossBreath.userData.len = len
-    bossBreath.scale.set(1, len, 1)
-    bossBreath.position.copy(mouth).addScaledVector(dir, len * 0.5)
-    bossBreath.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir)
-    bossBreath.material.opacity = rage ? 0.92 : 0.8
-    if (!data.didHit && data.attackT < (rage ? 0.82 : 0.95)) {
-      const toPlayer = player.position.clone().sub(mouth)
-      const along = toPlayer.dot(dir)
-      const lateral = toPlayer.clone().sub(dir.clone().multiplyScalar(along)).length()
-      if (along > 0 && along < len + 1 && lateral < 1.9) {
-        damagePlayer(rage ? 18 : 12, 'Boro Breath scorched you!', mouth)
-      }
-      data.didHit = true
-    }
-    if (data.attackT <= 0) {
-      data.phase = 'idle'
-      data.cooldown = rage ? 1.0 : 1.45
-      bossBreath.visible = false
-      bossBreath.userData.active = false
-    }
-  }
-
-  if (bossShockwave.userData.active) {
-    bossShockwave.userData.t += delta
-    bossShockwave.userData.radius += (rage ? 9 : 7) * delta
-    bossShockwave.scale.setScalar(bossShockwave.userData.radius)
-    bossShockwave.material.opacity = Math.max(0, 0.85 - bossShockwave.userData.t * 1.6)
-    if (
-      !bossShockwave.userData.didHit &&
-      player.position.distanceTo(bossShockwave.position) < bossShockwave.userData.radius + 1.3
-    ) {
-      damagePlayer(rage ? 10 : 7, 'Shockwave clipped you!', boss.position)
-      bossShockwave.userData.didHit = true
-    }
-    if (bossShockwave.userData.t > 0.6) {
-      bossShockwave.visible = false
-      bossShockwave.userData.active = false
-    }
-  }
-
-  if (!bossBreath.visible) {
-    bossBreath.material.opacity = 0
-  }
-}
-
 function updateIntroAmbient(delta, t) {
   const wy = sampleWaveHeight(ship.position.x, ship.position.z, t)
   ship.position.y = 0.18 + wy * 0.85
@@ -2491,6 +2011,7 @@ function animate() {
   }
 
   updateBossFight(delta, t)
+  updateMusicMood()
 
   if (intro?.isActive) {
     intro.update(delta)
@@ -2510,6 +2031,22 @@ function animate() {
     if (ship.userData.wheel) {
       ship.userData.wheel.rotation.z = Math.sin(t * 0.4) * 0.15
     }
+    sunDir.copy(sun.position).normalize()
+    ocean.update(t, { night, dive: false, sunDir })
+    if (bloomEnabled) composer.render()
+    else renderer.render(scene, camera)
+    return
+  }
+
+  if (epilogue?.isActive) {
+    epilogue.update(delta)
+    updateIntroAmbient(delta, t)
+    updateIdleCrew(delta, t)
+    updateSlashVfx(delta)
+    for (const c of clouds) {
+      c.position.x += Math.sin(t * 0.04 + c.position.z * 0.01) * 0.003
+    }
+    flagPole.children[1].rotation.y = Math.sin(t * 2) * 0.15
     sunDir.copy(sun.position).normalize()
     ocean.update(t, { night, dive: false, sunDir })
     if (bloomEnabled) composer.render()
@@ -2678,6 +2215,7 @@ intro = createIntro({
     moveFacingInit = true
     playerVel.set(0, 0, 0)
     sfx.unlock()
+    music.start('explore')
     setStatus('Welcome aboard — explore One Piece World!')
     setTimeout(() => setStatus(''), 2400)
     intro = null

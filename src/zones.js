@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { groundY, WATER_SURFACE } from './world.js'
+import { groundY, WATER_SURFACE, W } from './world.js'
 
 function mat(color, opts = {}) {
   return new THREE.MeshStandardMaterial({ color, roughness: 0.85, ...opts })
@@ -149,15 +149,15 @@ export function createAdventureZones(scene) {
   )
   doorGlow.position.set(0, 1.4, 0.15)
   entrance.add(doorGlow)
-  const ex = -84
-  const ez = -38
+  const ex = W(-84)
+  const ez = W(-38)
   entrance.position.set(ex, groundY(ex, ez), ez)
   entrance.rotation.y = 0.4
   ruins.add(entrance)
 
   // Underground chamber (offset below world)
   const chamber = new THREE.Group()
-  chamber.position.set(-90, -8, -40)
+  chamber.position.set(W(-90), -8, W(-40))
   const floor = new THREE.Mesh(
     new THREE.BoxGeometry(18, 0.4, 14),
     mat(0x8d6e4c, { roughness: 0.95 }),
@@ -243,14 +243,14 @@ export function createAdventureZones(scene) {
     exitPad,
     solved: false,
     inside: false,
-    spawn: new THREE.Vector3(-90, -7.2, -40),
+    spawn: new THREE.Vector3(W(-90), -7.2, W(-40)),
     exitWorld: new THREE.Vector3(ex, groundY(ex, ez) + 0.2, ez + 3),
   }
 
   // ——— Winter ice + braziers ———
   const icePatches = [
-    { x: -55, z: 85, r: 14 },
-    { x: -130, z: 30, r: 13 },
+    { x: W(-55), z: W(85), r: W(14) },
+    { x: W(-130), z: W(30), r: W(13) },
   ]
   const iceMeshes = []
   for (const p of icePatches) {
@@ -272,9 +272,9 @@ export function createAdventureZones(scene) {
 
   const braziers = []
   const brazierSpots = [
-    [-50, 88],
-    [-58, 82],
-    [-48, 92],
+    [W(-50), W(88)],
+    [W(-58), W(82)],
+    [W(-48), W(92)],
   ]
   // Light order: 0 → 1 → 2
   brazierSpots.forEach(([bx, bz], i) => {
@@ -286,7 +286,7 @@ export function createAdventureZones(scene) {
   })
 
   const winterChest = makeRareChest()
-  winterChest.position.set(-54, groundY(-54, 86), 86)
+  winterChest.position.set(W(-54), groundY(W(-54), W(86)), W(86))
   winterChest.visible = false
   winterChest.userData.id = 'rare-winter'
   scene.add(winterChest)
@@ -304,16 +304,16 @@ export function createAdventureZones(scene) {
   // ——— Sky wind pads ———
   const windPads = []
   const padSpots = [
-    [110, 110],
-    [118, 108],
-    [104, 118],
-    [102, 104],
-    [116, 116],
+    [W(110), W(110)],
+    [W(118), W(108)],
+    [W(104), W(118)],
+    [W(102), W(104)],
+    [W(116), W(116)],
   ]
   for (const [px, pz] of padSpots) {
     const pad = makeWindPad()
     const gy = groundY(px, pz)
-    pad.position.set(px, Math.max(gy, 14), pz)
+    pad.position.set(px, Math.max(gy, 18), pz)
     scene.add(pad)
     windPads.push(pad)
   }
@@ -321,8 +321,8 @@ export function createAdventureZones(scene) {
   // ——— Underwater cave (NE of main island / Jinbe) ———
   const cave = new THREE.Group()
   cave.name = 'UnderwaterCave'
-  const caveCx = 30
-  const caveCz = 18
+  const caveCx = W(30)
+  const caveCz = W(18)
   cave.position.set(caveCx, WATER_SURFACE - 2.4, caveCz)
 
   const caveFloor = new THREE.Mesh(
@@ -365,8 +365,8 @@ export function createAdventureZones(scene) {
 
   // Shore chest near the cove (easy island pickup — no dive needed)
   const caveChest = makeRareChest()
-  const shoreX = 22
-  const shoreZ = 14
+  const shoreX = W(22)
+  const shoreZ = W(14)
   caveChest.position.set(shoreX, groundY(shoreX, shoreZ), shoreZ)
   caveChest.userData.id = 'rare-cove'
   scene.add(caveChest)

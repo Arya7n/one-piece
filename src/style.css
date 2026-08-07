@@ -168,6 +168,117 @@ body.intro-active #game-toast {
   pointer-events: none;
 }
 
+/* Victory ceremony — reuses intro lock, gold accent */
+#epilogue-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 24px 48px;
+  pointer-events: auto;
+  cursor: pointer;
+  animation: intro-in 0.8s ease-out;
+}
+
+#epilogue-overlay.epilogue-out {
+  animation: intro-out 0.65s ease-in forwards;
+  pointer-events: none;
+}
+
+#epilogue-vignette {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(
+      ellipse 70% 55% at 50% 40%,
+      transparent 0%,
+      rgba(40, 18, 0, 0.45) 100%
+    ),
+    linear-gradient(180deg, rgba(255, 193, 7, 0.08), transparent 40%, rgba(0, 0, 0, 0.35));
+  pointer-events: none;
+}
+
+#epilogue-banner {
+  position: relative;
+  z-index: 1;
+  margin-bottom: 10px;
+  font: 800 clamp(12px, 2.5vw, 14px) / 1 'Trebuchet MS', 'Segoe UI', sans-serif;
+  letter-spacing: 0.35em;
+  color: #ffecb3;
+  text-shadow: 0 1px 0 #5d4037, 0 0 18px rgba(255, 193, 7, 0.55);
+  pointer-events: none;
+}
+
+#epilogue-copy {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  max-width: min(520px, 92vw);
+  margin-bottom: 20px;
+  pointer-events: none;
+}
+
+#epilogue-title {
+  font: 800 clamp(26px, 5.5vw, 40px) / 1.1 'Trebuchet MS', 'Segoe UI', sans-serif;
+  color: #fff8e1;
+  text-shadow:
+    0 2px 0 #1a1a1a,
+    0 4px 16px rgba(0, 0, 0, 0.45);
+  letter-spacing: 0.03em;
+  margin-bottom: 8px;
+}
+
+#epilogue-subtitle {
+  font: 600 clamp(13px, 2.8vw, 17px) / 1.35 'Trebuchet MS', 'Segoe UI', sans-serif;
+  color: #ffe082;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+
+#epilogue-title.epilogue-fade,
+#epilogue-subtitle.epilogue-fade {
+  animation: intro-copy-in 0.55s ease-out;
+}
+
+#epilogue-skip {
+  position: relative;
+  z-index: 2;
+  font: 700 13px/1 'Trebuchet MS', 'Segoe UI', sans-serif;
+  padding: 10px 20px;
+  border: 3px solid #ffecb3;
+  border-radius: 999px;
+  background: rgba(26, 26, 26, 0.7);
+  color: #ffecb3;
+  cursor: pointer;
+  box-shadow: 3px 3px 0 #1a1a1a;
+  pointer-events: auto;
+  transition: background 0.2s, transform 0.15s;
+}
+
+#epilogue-skip:hover {
+  background: rgba(198, 40, 40, 0.85);
+  transform: scale(1.03);
+}
+
+#epilogue-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+#epilogue-progress-fill {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #ff8f00, #ffd54f);
+  transition: width 0.15s linear;
+}
+
 #hud-root {
   position: absolute;
   top: 16px;
@@ -699,17 +810,48 @@ body.spectating #hud-spectate {
   color: #fff8e1;
 }
 
-.guide-link-btn {
+.hud-info-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-top: 10px;
+  padding-top: 8px;
+  border-top: 2px dashed rgba(198, 40, 40, 0.35);
+}
+
+.hud-info-btn,
+.guide-link-btn {
   font: 700 12px/1 'Trebuchet MS', 'Segoe UI', sans-serif;
   padding: 8px 12px;
   border: 2px solid #1a1a1a;
   border-radius: 10px;
-  background: #ef6c00;
-  color: #fff8e1;
   cursor: pointer;
   box-shadow: 2px 2px 0 #1a1a1a;
   pointer-events: auto;
+}
+
+#mute-toggle.hud-info-btn {
+  background: #fff8e1;
+  color: #5d4037;
+}
+
+#mute-toggle.hud-info-btn[data-muted='true'] {
+  background: #455a64;
+  color: #eceff1;
+  border-color: #263238;
+}
+
+#mute-toggle.hud-info-btn:hover {
+  background: #ffe082;
+}
+
+#mute-toggle.hud-info-btn[data-muted='true']:hover {
+  background: #546e7a;
+}
+
+.guide-link-btn {
+  background: #ef6c00;
+  color: #fff8e1;
 }
 
 .guide-link-btn:hover {
